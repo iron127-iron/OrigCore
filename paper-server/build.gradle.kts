@@ -13,6 +13,13 @@ plugins {
 
 val paperMavenPublicUrl = "https://repo.papermc.io/repository/maven-public/"
 
+// OrigCore - OrigCore 核心自身的版本號（來源：gradle.properties 的 origCoreVersion）。
+// 刻意與 project.version 分開：project.version 是 Minecraft／Bukkit API 版本，
+// 會影響 Bukkit#getBukkitVersion() 與插件相容性，不能改成 OrigCore 的版本號。
+val origCoreVersion: String = providers.gradleProperty("origCoreVersion")
+    .orElse("0.1.0")
+    .get()
+
 dependencies {
     mache("io.papermc:mache:1.21.11+build.1")
     paperclip("io.papermc:paperclip:3.0.3")
@@ -21,6 +28,13 @@ dependencies {
 paperweight {
     minecraftVersion = providers.gradleProperty("mcVersion")
     gitFilePatches = false
+
+    // OrigCore - 產出的 JAR 檔名使用 OrigCore 品牌
+    // Paperweight 的預設值是硬編碼的 "paper"，與 Gradle 的 rootProject.name 無關，
+    // 因此必須在此明確設定。設定後輸出檔名為：
+    //   <bundlerJarName>-<kind>-<version>-<classifier>.jar
+    //   例如 origcore-bundler-0.1.0-mojmap.jar、origcore-paperclip-0.1.0-mojmap.jar
+    bundlerJarName.set("origcore")
 
     spigot {
         enabled = true
@@ -32,6 +46,7 @@ paperweight {
         "co.aikar.timings",
         "com.destroystokyo.paper",
         "com.mojang",
+        "io.origcore", // OrigCore - OrigCore 自己的類別會參考 net.minecraft，重新混淆時必須一併修正
         "io.papermc.paper",
         "ca.spottedleaf",
         "net.kyori.adventure.bossbar",
@@ -198,14 +213,24 @@ tasks.jar {
         val gitBranch = git.exec(providers, "rev-parse", "--abbrev-ref", "HEAD").get().trim()
         attributes(
             "Main-Class" to "org.bukkit.craftbukkit.Main",
-            "Implementation-Title" to "Paper",
+            // OrigCore start - 品牌與版本識別
+            // 這些 manifest 屬性會決定啟動日誌中的核心名稱（ServerBuildInfo -> Bukkit#getName），
+            // 以及 Bukkit#getVersion() 顯示的內容。
+            "Implementation-Title" to "OrigCore",
             "Implementation-Version" to implementationVersion,
             "Implementation-Vendor" to date,
-            "Specification-Title" to "Paper",
+            "Specification-Title" to "OrigCore",
             "Specification-Version" to project.version,
-            "Specification-Vendor" to "Paper Team",
-            "Brand-Id" to "papermc:paper",
-            "Brand-Name" to "Paper",
+            "Specification-Vendor" to "OrigCore Project",
+            "OrigCore-Version" to origCoreVersion,
+            "OrigCore-Upstream" to "PaperMC/Paper",
+            "OrigCore-Upstream-Branch" to "ver/1.21.11",
+            "OrigCore-Upstream-Commit" to gitHash,
+            // Brand-Id 改為 OrigCore，但 ServerBuildInfoImpl#isBrandCompatible
+            // 仍然接受 Paper 的品牌識別，以維持插件相容性。
+            "Brand-Id" to "origcore:origcore",
+            "Brand-Name" to "OrigCore",
+            // OrigCore end
             "Build-Number" to (build ?: ""),
             "Build-Time" to buildTime.toString(),
             "Git-Branch" to gitBranch,
@@ -263,6 +288,44 @@ tasks.test {
     provider.fileCollection.from(mockitoAgent)
     jvmArgumentProviders.add(provider)
 }
+
+// ---------------------------------------------------------------------------
+// OrigCore start - OrigCore 專屬單元測試
+//
+// 只驗證 OrigCore 自己的純邏輯（設定驗證、工作池語意、取消語意、百分位數、
+// CPU 推導）。這些測試不需要啟動 Minecraft 伺服器，因此與 Paper 既有的
+// test 任務分開：Paper 的 test 任務會啟動伺服器且只執行 *TestSuite。
+//
+// 執行方式：gradlew :paper-server:origcoreTest
+// ---------------------------------------------------------------------------
+val origCoreTest: SourceSet = sourceSets.create("origcoreTest") {
+    java.srcDir("src/origcoreTest/java")
+}
+// 沿用 Paper 既有的測試相依（JUnit 5 等）與編譯類別路徑。
+configurations.named(origCoreTest.compileClasspathConfigurationName) {
+    extendsFrom(configurations.testCompileClasspath.get())
+}
+configurations.named(origCoreTest.runtimeClasspathConfigurationName) {
+    extendsFrom(configurations.testRuntimeClasspath.get())
+}
+// 受測類別位於主原始碼集。
+origCoreTest.compileClasspath += sourceSets.main.get().output
+origCoreTest.runtimeClasspath += sourceSets.main.get().output
+
+val origCoreTestTask = tasks.register<Test>("origcoreTest") {
+    description = "執行 OrigCore 專屬單元測試（不需要 Minecraft 伺服器）。"
+    group = "verification"
+    testClassesDirs = origCoreTest.output.classesDirs
+    classpath = origCoreTest.runtimeClasspath
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
+}
+tasks.named("check") {
+    dependsOn(origCoreTestTask)
+}
+// OrigCore end
 
 val generatedDir: java.nio.file.Path = layout.projectDirectory.dir("src/generated/java").asFile.toPath()
 idea {

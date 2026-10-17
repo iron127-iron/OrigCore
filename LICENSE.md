@@ -1,3 +1,15 @@
+OrigCore is a fork of Paper. OrigCore's own modifications are released under the
+same terms as Paper (see below). OrigCore is **not** an official PaperMC product;
+please do not report OrigCore issues to PaperMC.
+
+The OrigCore project adds, among other things, the files under
+`paper-server/src/main/java/io/origcore/` and the OrigCore hooks in
+`paper-server/patches/sources/net/minecraft/server/MinecraftServer.java.patch`.
+Those additions are released under the GNU General Public License version 3,
+the same license Paper inherits from its own upstream projects.
+
+---
+
 Paper inherits its licensing from the included upstream projects.
 
 As such, Paper is licensed under the

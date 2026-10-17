@@ -18,6 +18,12 @@ public final class PaperBootstrap {
 
         getStartupVersionMessages().forEach(LOGGER::info);
 
+        // OrigCore start - 核心啟動掛鉤
+        // 於 Minecraft 主流程之前初始化 OrigCore（設定、CPU 偵測、背景工作池、診斷）。
+        // 此呼叫永不阻止伺服器啟動；內部失敗只會停用 OrigCore 的附加功能。
+        io.origcore.OrigCoreBootstrap.onServerBoot();
+        // OrigCore end
+
         Main.main(options);
     }
 

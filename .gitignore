@@ -41,6 +41,8 @@ out/
 # other stuff
 run/
 logs/
+# OrigCore - 本機啟動驗證用的執行目錄（含世界資料，體積很大）
+run-*/
 
 !gradle/wrapper/gradle-wrapper.jar
 

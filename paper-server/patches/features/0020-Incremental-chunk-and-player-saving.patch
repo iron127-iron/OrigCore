@@ -5,7 +5,7 @@ Subject: [PATCH] Incremental chunk and player saving
 
 
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index a9751f4bda862ef597ba39700b83c434f7a457d9..90e23b96ed3fc5a84f52e6f94ad40bdb028fedf7 100644
+index dc02766e0921768492da819f24fee5688a802a2e..e520ddcfa3110620ac7b367e40be9d8e3f0051f7 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
 @@ -972,7 +972,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -17,7 +17,7 @@ index a9751f4bda862ef597ba39700b83c434f7a457d9..90e23b96ed3fc5a84f52e6f94ad40bdb
              var4 = this.saveAllChunks(suppressLogs, flush, force);
          } finally {
              this.isSaving = false;
-@@ -1615,9 +1615,29 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1616,9 +1616,29 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          }
  
          this.ticksUntilAutosave--;

@@ -30,7 +30,7 @@ public record ServerBuildInfoImpl(
     private static final String ATTRIBUTE_GIT_BRANCH = "Git-Branch";
     private static final String ATTRIBUTE_GIT_COMMIT = "Git-Commit";
 
-    private static final String BRAND_PAPER_NAME = "Paper";
+    private static final String BRAND_DEFAULT_NAME = "OrigCore"; // OrigCore - 未提供 Brand-Name manifest 屬性時的預設品牌名稱
 
     private static final String BUILD_DEV = "DEV";
 
@@ -44,7 +44,7 @@ public record ServerBuildInfoImpl(
                 .map(Key::key)
                 .orElse(BRAND_PAPER_ID),
             getManifestAttribute(manifest, ATTRIBUTE_BRAND_NAME)
-                .orElse(BRAND_PAPER_NAME),
+                .orElse(BRAND_DEFAULT_NAME),
             SharedConstants.getCurrentVersion().id(),
             SharedConstants.getCurrentVersion().name(),
             getManifestAttribute(manifest, ATTRIBUTE_BUILD_NUMBER)
@@ -61,7 +61,13 @@ public record ServerBuildInfoImpl(
 
     @Override
     public boolean isBrandCompatible(final @NotNull Key brandId) {
-        return brandId.equals(this.brandId);
+        // OrigCore start - 保留對 Paper 品牌識別的相容性
+        // 部分插件會以 ServerBuildInfo#brandId() 判斷伺服器是否為 Paper。
+        // OrigCore 以 Paper 為唯一正式上游，因此除了自身品牌之外，
+        // 同時接受 Paper 的品牌識別，避免插件因為品牌不同而拒絕運作。
+        // 這只影響品牌判斷，不改變任何 API 行為或執行緒語意。
+        return brandId.equals(this.brandId) || brandId.equals(BRAND_PAPER_ID);
+        // OrigCore end
     }
 
     @Override

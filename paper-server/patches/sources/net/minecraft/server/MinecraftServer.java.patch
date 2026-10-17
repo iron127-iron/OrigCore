@@ -546,7 +546,7 @@
          if (flush) {
              for (ServerLevel serverLevel : this.getAllLevels()) {
                  LOGGER.info("ThreadedAnvilChunkStorage ({}): All chunks are saved", serverLevel.getChunkSource().chunkMap.getStorageName());
-@@ -653,19 +_,49 @@
+@@ -653,19 +_,50 @@
          this.stopServer();
      }
  
@@ -577,6 +577,7 @@
          }
  
          LOGGER.info("Stopping server");
++        io.origcore.OrigCoreBootstrap.onServerStopping(); // OrigCore - 受控關閉背景工作池（先於插件停用）
 +        Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
 +        // CraftBukkit start
 +        if (this.server != null) {
@@ -1004,7 +1005,11 @@
          profilerFiller.push("tallying");
          long l = Util.getNanos() - nanos;
          int i1 = this.tickCount % 100;
-@@ -1039,16 +_,16 @@
+@@ -1036,19 +_,25 @@
+     }
+ 
+     protected void processPacketsAndTick(boolean sprinting) {
++        io.origcore.OrigCoreBootstrap.onServerTickStart(); // OrigCore - 診斷取樣（Tick 進入點）
          ProfilerFiller profilerFiller = Profiler.get();
          profilerFiller.push("tick");
          this.tickFrame.start();
@@ -1017,6 +1022,11 @@
          this.tickFrame.end();
 +        this.recordEndOfTick(); // Paper - improve tick loop
          profilerFiller.pop();
++        // OrigCore start - 診斷與主執行緒派送
++        // 只在主執行緒上排空派送佇列、輸出診斷摘要。
++        // 不修改世界狀態、不改變任何 Tick 語意、不阻塞。
++        io.origcore.OrigCoreBootstrap.onServerTick();
++        // OrigCore end
      }
  
      private void autoSave() {

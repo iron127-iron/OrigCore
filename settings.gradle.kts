@@ -29,7 +29,7 @@ if (!file(".git").exists()) {
     error(errorText)
 }
 
-rootProject.name = "paper"
+rootProject.name = "origcore" // OrigCore - 核心識別名稱
 
 for (name in listOf("paper-api", "paper-server")) {
     include(name)
