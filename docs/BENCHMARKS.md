@@ -68,27 +68,29 @@ Remove-Item -Recurse -Force bench-origcore -ErrorAction SilentlyContinue
 
 | 來源 | 內容 |
 | --- | --- |
-| 主控台／`logs/latest.log` | 每次取樣的完整診斷摘要 |
+| `logs/latest.log` | 每次取樣的完整診斷摘要（**日誌順序以這個檔案為準**） |
+| 主控台輸出 | 同上；但用 `tools/smoke-test.ps1` 擷取時，請注意腳本會自己重導輸出以保證行序 |
 | `logs/origcore-diagnostics.txt` | 關閉時的完整快照（CPU 資訊、工作統計、派送統計） |
 | 既有工具 | Spark、Paper 內建 timings 等（OrigCore 不取代它們） |
 
 ### 2.3 判讀
 
 - 只看 MSPT 的 **P95 / P99**，不要只看 P50；平均值會把尖峰藏起來。
-- 若「工作佇列等待」很高而成「工作執行時間」很低，代表工作太多而不是工作太慢。
+- 若「工作佇列等待」很高而「工作執行時間」很低，代表工作太多而不是工作太慢。
 - 若有 `rejected` 或 `timeouts` 不為 0，先修正確性，再談效能。
-- 阻塞式設定（例如把 `queue-capacity` 調到很小）造成的拒絕**不是**效能改善。
+- 降低 `queue-capacity` 造成的拒絕**不是**效能改善。
 
 ---
 
 ## 3. 已觀察到的資料
 
 以下數字來自 0.1.0 的**啟動煙霧測試**（`tools/smoke-test.ps1`），
-**不是**效能基準測試，也**沒有**與未修改的 Paper 做對照量測。列出它們只是為了說明診斷輸出的樣子。
+**不是**效能基準測試，也**沒有**與未修改的 Paper 做對照量測。
+列出它們只是為了說明診斷輸出的樣子。
 
 ### 環境
 
-```
+```text
 Windows 11
 Eclipse Temurin 25.0.4
 20 logical processors, ~31.7 GB RAM
@@ -98,7 +100,7 @@ OrigCore 0.1.0（Minecraft 1.21.11，Paper upstream ver/1.21.11@c5eb079）
 worker-threads: 0（auto）→ 實際上建立 8 條工作執行緒，佇列容量 1024
 ```
 
-### 摘要
+### 第一次運行（全新產生世界）
 
 | 摘要 | 涵蓋時間 | Ticks | TPS 1m | MSPT P50 | MSPT P95 | MSPT P99 | Paper avg tick |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -109,7 +111,7 @@ worker-threads: 0（auto）→ 實際上建立 8 條工作執行緒，佇列容�
 
 同一時間的工作統計：
 
-```
+```text
 worker threads: 8 (busy 0)
 work queue    : 0 / 1024
 work counters : submitted 0, completed 0, cancelled 0, rejected 0, failed 0, timeouts 0
@@ -117,14 +119,26 @@ main dispatch : dispatched 0, executed 0, rejected 0, buffered 0
 safety violations: 0 (mode WARN)
 ```
 
+### 第二次運行（同一個已產生完成的世界，修正輸出格式之後）
+
+在把診斷摘要改為逐行輸出之後重跑同一份驗證，得到同樣的模式：
+
+| 摘要 | 涵蓋時間 | Ticks | TPS 1m | MSPT P50 | MSPT P95 | MSPT P99 | Paper avg tick |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| #2 | 10.0 s | 201 | 20.00 | 0.35 ms | 0.72 ms | 1.18 ms | 0.38 ms |
+| #4 | 10.0 s | 200 | 20.00 | 0.17 ms | 0.30 ms | 0.49 ms | 0.19 ms |
+
+關閉時的最終統計：`uptime about 37 s, 745 ticks, 4 summaries printed`，
+工作計數同樣全部為 0。
+
 ### 這些數字說明了什麼
 
 1. **摘要 #1 是產生世界期間的資料**（TPS 15.88、MSPT 62 ms），不能當成基準。
-2. 世界產生完成後 TPS 回到 19.99，MSPT P50 降到 0.17–0.42 ms，P99 仍有 0.49–10.19 ms——
+2. 世界產生完成後 TPS 回到 20.00，MSPT P50 降到 0.17–0.42 ms，而 P99 仍有 0.49–10.19 ms——
    **這正是只看 P50 會看不到的東西**。
-3. **所有工作計數都是 0。** 這是預期結果，也直接印證了 §0 的聲明：
+3. **所有工作計數都是 0。** 這是預期結果，也直接印證了誠實聲明：
    0.1.0 沒有任何原版工作被放到背景執行，所以它對效能的影響應該接近零。
-4. 這個量測**不足以**支持任何效能主張，也不應該被引用為效能證據。
+4. 這些量測**不足以**支持任何效能主張，也不應該被引用為效能證據。
 
 ---
 

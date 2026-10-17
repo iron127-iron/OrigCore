@@ -163,7 +163,7 @@ cd ..\..\..\..
 # 2) OrigCore 單元測試（38 項，不需要伺服器）
 .\gradlew.bat :paper-server:origcoreTest
 
-# 3) 完整檢查（含掃描 jar 中不該被呼叫的 API）
+# 3) 完整檢查（含掃描 jar 中不該被呼叫的 API，以及 Paper 自己的測試）
 .\gradlew.bat check
 
 # 4) 啟動／關閉驗證
@@ -182,6 +182,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 - 出現 `===== OrigCore diagnostics summary #N =====`。
 - 關閉時出現最終統計，並寫出 `logs/origcore-diagnostics.txt`。
 - 行程結束碼為 `0`。
+
+> **關於 `gradlew check`：** 這個任務除了 OrigCore 的單元測試與 `scanJarForBadCalls` 之外，
+> 也會執行 Paper 上游自己的測試（`tasks.test` 只執行 `*TestSuite`，且會啟動測試用伺服器、
+> 每個測試類別 fork 一個 JVM）。
+>
+> **目前已在 Windows 上驗證的是 `:paper-server:compileJava`、`:paper-server:origcoreTest`
+> 與實際啟動煙霧測試；`check` 這個任務尚未在 Windows 上完整跑過。**
+> 如果你需要一個確定可用的驗證門檻，請用上面 1、2、4 三個步驟。
 
 ---
 

@@ -75,37 +75,37 @@ $logFile = Join-Path $RunDir 'console.log'
 if (Test-Path -LiteralPath $logFile) { Remove-Item -LiteralPath $logFile -Force }
 
 # --- 啟動 --------------------------------------------------------------
+# 重要：用 cmd 的 "1> file 2>&1" 讓「子行程自己」寫入輸出檔。
+#
+# 若改用 [Process] 的 OutputDataReceived / ErrorDataReceived 事件回呼，
+# 這些回呼會在多個執行緒集區執行緒上並行附加同一個檔案，導致 console.log
+# 的行序與實際輸出順序不同（實際遇過診斷摘要的某一行被搬到區塊最後面，
+# 造成誤判為程式碼順序錯誤）。直接由 cmd 重導可保證只有一個寫入者，
+# 行序與實際一致。
+#
+# 要交叉檢查真正的日誌順序時，請看 logs/latest.log（log4j 檔案輸出，順序一定正確）。
+$batFile = Join-Path $RunDir 'start-server.bat'
+$batContent = @(
+    '@echo off',
+    'rem OrigCore smoke-test: let cmd redirect stdout and stderr to one file (single writer).',
+    "java -Xms512M -Xmx${MaxHeapMB}M -jar `"$Jar`" --nogui 1> `"$logFile`" 2>&1",
+    'exit /b %ERRORLEVEL%'
+) -join "`r`n"
+Write-TextNoBom $batFile $batContent
+
 $psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = 'java'
-$psi.Arguments = "-Xms512M -Xmx${MaxHeapMB}M -jar `"$Jar`" --nogui"
+$psi.FileName = $batFile
 $psi.WorkingDirectory = $RunDir
 $psi.UseShellExecute = $false
+# 只用 stdin 送 stop；stdout/stderr 已由 cmd 重導到檔案，不需要另外接管。
 $psi.RedirectStandardInput = $true
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-$psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+$psi.RedirectStandardOutput = $false
+$psi.RedirectStandardError = $false
 
-Write-Host "啟動: java $($psi.Arguments)"
+Write-Host "啟動: java -Xms512M -Xmx${MaxHeapMB}M -jar `"$Jar`" --nogui"
 Write-Host "工作目錄: $RunDir"
 
 $proc = [System.Diagnostics.Process]::Start($psi)
-
-$sync = [hashtable]::Synchronized(@{})
-$outAction = {
-    if ($null -ne $EventArgs.Data) {
-        try { [System.IO.File]::AppendAllText($Event.MessageData.LogFile, $EventArgs.Data + "`r`n") } catch { }
-    }
-}
-$errAction = {
-    if ($null -ne $EventArgs.Data) {
-        try { [System.IO.File]::AppendAllText($Event.MessageData.LogFile, "[STDERR] " + $EventArgs.Data + "`r`n") } catch { }
-    }
-}
-Register-ObjectEvent -InputObject $proc -EventName OutputDataReceived -Action $outAction -MessageData @{ LogFile = $logFile } | Out-Null
-Register-ObjectEvent -InputObject $proc -EventName ErrorDataReceived  -Action $errAction -MessageData @{ LogFile = $logFile } | Out-Null
-$proc.BeginOutputReadLine()
-$proc.BeginErrorReadLine()
 
 Write-Host "等待 ${StartupWaitSeconds}s 讓伺服器啟動..."
 Start-Sleep -Seconds $StartupWaitSeconds
@@ -129,8 +129,8 @@ if (-not $NoStop) {
     Write-Host "（NoStop 模式，不送 stop）"
 }
 
+# 等待檔案控點關閉、且 cmd 已把緩衝內容刷新到磁碟。
 Start-Sleep -Seconds 2
-Get-EventSubscriber | Unregister-Event -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "===== 主控台輸出尾巴 ====="

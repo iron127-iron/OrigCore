@@ -144,7 +144,7 @@ paper-server-1.21.11-R0.1-SNAPSHOT.jar
 | OrigCore 單元測試 | `gradlew :paper-server:origcoreTest` |
 | 打包（bundler） | `gradlew createMojmapBundlerJar` |
 | 打包（paperclip） | `gradlew createMojmapPaperclipJar` |
-| 完整檢查 | `gradlew check` |
+| 完整檢查 | `gradlew check`（含 Paper 上游自己的測試；OrigCore 尚未在 Windows 上驗證此任務，見 `docs/BUILD.md`） |
 | 開發用伺服器 | `gradlew runServer`（或 `runBundler`／`runPaperclip`） |
 
 ---
