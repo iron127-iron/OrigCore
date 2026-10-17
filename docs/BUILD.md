@@ -225,8 +225,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 CI 位於 `.github/workflows/build.yml`，執行內容：
 
 1. `applyPatches`
-2. `:paper-server:origcoreTest`
-3. `check`
-4. `createMojmapBundlerJar`（並上傳產出）
+2. `:paper-server:compileJava`
+3. `:paper-server:origcoreTest`（並上傳測試結果 XML）
+4. `rebuildPatches` 後檢查 `git diff -- paper-server/patches` 必須為空
+   （確認 patch 堆疊是可重現的）
+5. `createMojmapBundlerJar` + `createMojmapPaperclipJar`（並上傳產出）
 
-CI 只建置 Minecraft 1.21.11，**不建立多版本矩陣**。
+CI 只建置 Minecraft 1.21.11，**不建立多版本矩陣**，也**不執行 `gradlew check`**
+（Paper 自己的測試任務會啟動測試用伺服器，不適合放在這個流程裡）。
+
+### ★把 OrigCore 推上 GitHub 之前請先處理這四個上游 workflow★
+
+`.github/workflows/` 底下除了 `build.yml` 之外，還有四個檔案是 **PaperMC 官方 repo 專用**的
+自動化，直接沿用到 fork 會出問題：
+
+| 檔案 | 它原本做什麼 | 在 fork 裡可能的後果 |
+| --- | --- | --- |
+| `close_invalid_prs.yml` | 由 `pull_request_target` 觸發，關閉不符合規則的 PR | **可能自動關閉你自己 repo 的 PR** |
+| `projects.yml` | 把標記 `type: bug` 的 issue 加進 PaperMC 的 project 看板 | 動作錯誤或直接失敗 |
+| `publish_pr.yml` | 把 PR 的建置結果發布出去，需要 PaperMC 的 secrets／PAT | 因缺少 secrets 而失敗 |
+| `test_results.yml` | 回報測試結果 | 因缺少對應的權限／流程而失敗 |
+
+OrigCore 0.1.0 **刻意沒有刪除**這些檔案：它們是上游檔案，刪掉會讓之後同步
+`ver/1.21.11` 時多出無謂的衝突。請在建立 OrigCore 的 GitHub repo 之後，
+用 GitHub 介面（Actions → 選擇 workflow → Disable）或直接在 fork 上刪除來處理，
+並自行決定是否要長期保留上游檔案以利同步。
