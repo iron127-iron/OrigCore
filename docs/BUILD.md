@@ -243,12 +243,15 @@ CI 只建置 Minecraft 1.21.11，**不建立多版本矩陣**，也**不執行 `
 - GitHub 的行為：**在同一次 push 中新增的 workflow 不會被那次 push 觸發**。
   0.1.0 第一次 push 時 `build.yml` 就是這樣被新增的，所以**那個 push 沒有產生 run**；
   之後任何 push 都會正常觸發（不需要先手動 Run workflow）。
-- **實測結果：兩次 push 的 CI 都成功**（`ubuntu-latest`）：
+- **實測結果：每次 push 的 CI 都成功**（`ubuntu-latest`）：
 
   | 觸發 commit | 事件 | 結果 | Run |
   | --- | --- | --- | --- |
   | `05316122e` | push | ✅ success | [39091507636](https://github.com/iron127-iron/OrigCore/actions/runs/39091507636) |
   | `bc7adfaf3` | push | ✅ success | [39092573829](https://github.com/iron127-iron/OrigCore/actions/runs/39092573829) |
+  | `eb9d382d9` | push | ✅ success | [39092905689](https://github.com/iron127-iron/OrigCore/actions/runs/39092905689) |
+
+  （之後每次 push 都會觸發 CI；最新結果請以 Actions 頁面為準。）
 
 - 第二次的步驟全部 success：
   Checkout → Set up JDK 21 → Set up Gradle → Apply upstream patch stack → Compile →
