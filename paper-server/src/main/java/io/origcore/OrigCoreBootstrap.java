@@ -81,9 +81,13 @@ public final class OrigCoreBootstrap {
 
         try {
             final CpuResourceInfo cpuInfo = CpuResourceDetector.detect(
-                config.requestedWorkerThreads(),
-                OrigCoreConfig.HARD_MAX_WORKER_THREADS,
-                OrigCoreConfig.AUTO_WORKER_THREAD_CAP
+                new CpuResourceDetector.Request(
+                    config.requestedWorkerThreads(),
+                    OrigCoreConfig.HARD_MAX_WORKER_THREADS,
+                    config.autoWorkerThreadCap(),
+                    config.declaredLogicalProcessors(),
+                    config.declaredPhysicalCores()
+                )
             );
             for (final String line : cpuInfo.describe().split("\\R")) {
                 LOGGER.info(line);

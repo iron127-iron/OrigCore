@@ -127,7 +127,7 @@ public final class DiagnosticsReporter {
                 .append(" us / P95 ").append(us(work.runTime().p95()))
                 .append(" us / P99 ").append(us(work.runTime().p99())).append(" us").append(NL);
         } else {
-            sb.append("  worker threads   : disabled (threading.mode=disabled)").append(NL);
+            sb.append("  worker threads   : disabled (threading.enabled=false)").append(NL);
         }
 
         sb.append("  main dispatch    : dispatched ").append(dispatch.dispatched())

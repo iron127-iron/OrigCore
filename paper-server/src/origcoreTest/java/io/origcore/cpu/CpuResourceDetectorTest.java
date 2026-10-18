@@ -1,6 +1,7 @@
 package io.origcore.cpu;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -13,16 +14,33 @@ import org.junit.jupiter.api.Test;
  */
 class CpuResourceDetectorTest {
 
+    private static final int HARD_MAX = 64;
+    private static final int AUTO_CAP = 8;
+
+    private static CpuResourceInfo detect(
+        final int workerThreads,
+        final int declaredLogicalProcessors,
+        final int declaredPhysicalCores
+    ) {
+        return CpuResourceDetector.detect(new CpuResourceDetector.Request(
+            workerThreads, HARD_MAX, AUTO_CAP, declaredLogicalProcessors, declaredPhysicalCores
+        ));
+    }
+
     @Test
     void manualValueWithinTheLimitIsUsedAsIs() {
-        final CpuResourceInfo info = CpuResourceDetector.detect(4, 64, 8);
+        final CpuResourceInfo info = detect(4, 0, 0);
         assertEquals(4, info.effectiveWorkerThreads());
+        assertTrue(
+            info.notes().stream().anyMatch(note -> note.contains("fixed value")),
+            "固定值必須留下說明：" + info.notes()
+        );
     }
 
     @Test
     void manualValueAboveTheHardLimitIsClamped() {
-        final CpuResourceInfo info = CpuResourceDetector.detect(1_000, 64, 8);
-        assertEquals(64, info.effectiveWorkerThreads());
+        final CpuResourceInfo info = detect(1_000, 0, 0);
+        assertEquals(HARD_MAX, info.effectiveWorkerThreads());
         assertTrue(
             info.notes().stream().anyMatch(note -> note.contains("hard limit")),
             "超過上限必須留下說明，而不是默默截斷：" + info.notes()
@@ -31,22 +49,22 @@ class CpuResourceDetectorTest {
 
     @Test
     void autoModeStaysWithinTheAutoCapAndLeavesAProcessorForTheMainThread() {
-        final CpuResourceInfo info = CpuResourceDetector.detect(0, 64, 8);
+        final CpuResourceInfo info = detect(0, 0, 0);
 
         assertTrue(info.effectiveWorkerThreads() >= 1, "至少要有一條工作執行緒");
-        assertTrue(info.effectiveWorkerThreads() <= 8, "自動模式不得超過自動上限");
+        assertTrue(info.effectiveWorkerThreads() <= AUTO_CAP, "自動識別不得超過自動上限");
         assertTrue(
             info.effectiveWorkerThreads() <= Math.max(1, info.jvmAvailableProcessors() - 1),
-            "自動模式必須保留處理器給主執行緒"
+            "自動識別必須保留處理器給主執行緒"
         );
     }
 
     @Test
     void autoModeExplainsThatWorkerThreadsAreNotParallelWorldTicking() {
-        final CpuResourceInfo info = CpuResourceDetector.detect(0, 64, 8);
+        final CpuResourceInfo info = detect(0, 0, 0);
         assertTrue(
             info.notes().stream().anyMatch(note -> note.contains("worker-threads=0")),
-            "必須說明自動模式的推導來源：" + info.notes()
+            "必須說明自動識別的推導來源：" + info.notes()
         );
         assertTrue(
             info.notes().stream().anyMatch(note -> note.contains("does NOT mean")),
@@ -55,15 +73,75 @@ class CpuResourceDetectorTest {
     }
 
     @Test
+    void declaredLogicalProcessorsOverrideAutoDetection() {
+        final CpuResourceInfo info = detect(0, 3, 0);
+
+        assertEquals(3, info.declaredLogicalProcessors());
+        assertTrue(info.logicalProcessorsDeclared());
+        assertEquals(2, info.effectiveWorkerThreads(),
+            "宣告 3 個邏輯處理器時，自動識別應推導出 3 - 1 = 2 條工作執行緒");
+        assertTrue(
+            info.notes().stream().anyMatch(note -> note.contains("declared by the operator")),
+            "使用者宣告必須在說明中標示為 operator-declared：" + info.notes()
+        );
+    }
+
+    @Test
+    void declaredLogicalProcessorsStillRespectTheAutoCap() {
+        final CpuResourceInfo info = detect(0, 128, 0);
+        assertEquals(AUTO_CAP, info.effectiveWorkerThreads(),
+            "宣告值很大時仍不得超過自動識別上限");
+    }
+
+    @Test
+    void fixedWorkerThreadsWinOverDeclaredLogicalProcessors() {
+        final CpuResourceInfo info = detect(5, 32, 0);
+
+        assertEquals(5, info.effectiveWorkerThreads());
+        assertTrue(
+            info.notes().stream().anyMatch(note -> note.contains("CPU detection is NOT consulted")),
+            "固定值時必須說明不會參考偵測結果：" + info.notes()
+        );
+    }
+
+    @Test
+    void declaredPhysicalCoresAreReportedButDoNotDeriveTheThreadCount() {
+        final CpuResourceInfo info = detect(0, 0, 16);
+
+        assertEquals(16, info.declaredPhysicalCores());
+        assertTrue(info.physicalCoresDeclared());
+        assertTrue(
+            info.notes().stream().anyMatch(note -> note.contains("does NOT derive")),
+            "實體核心數只供顯示，必須說明它不參與推導：" + info.notes()
+        );
+        // 使用實體核心數推導會得到 min(cap, 16 - 1) = 8；這裡必須維持以邏輯處理器為基準。
+        assertTrue(info.effectiveWorkerThreads() <= AUTO_CAP);
+    }
+
+    @Test
+    void nothingIsDeclaredByDefault() {
+        final CpuResourceInfo info = detect(0, 0, 0);
+        assertFalse(info.logicalProcessorsDeclared());
+        assertFalse(info.physicalCoresDeclared());
+        assertEquals(CpuResourceInfo.NOT_DECLARED, info.declaredLogicalProcessors());
+        assertEquals(CpuResourceInfo.NOT_DECLARED, info.declaredPhysicalCores());
+    }
+
+    @Test
     void jvmAvailableProcessorsIsAlwaysAtLeastOne() {
-        final CpuResourceInfo info = CpuResourceDetector.detect(1, 64, 8);
+        final CpuResourceInfo info = detect(1, 0, 0);
         assertTrue(info.jvmAvailableProcessors() >= 1);
     }
 
     @Test
-    void descriptionIsAsciiOnlySoItCannotBreakOnNonUtf8Consoles() {
-        final CpuResourceInfo info = CpuResourceDetector.detect(0, 64, 8);
+    void descriptionMentionsDeclaredValuesAndStaysAsciiOnly() {
+        final CpuResourceInfo info = detect(0, 12, 8);
         final String description = info.describe();
+
+        assertTrue(description.contains("operator-declared"),
+            "報告必須讓使用者看出宣告值與偵測值的差別：" + description);
+        assertTrue(description.contains("auto (not declared)") || description.contains("12"),
+            "報告必須列出宣告值：" + description);
         assertTrue(
             description.chars().allMatch(ch -> ch < 128),
             "啟動日誌必須是純 ASCII，避免在非 UTF-8 主控台被寫壞"

@@ -16,8 +16,11 @@ import org.bukkit.configuration.file.YamlConfiguration;
  *   <li>所有設定都有繁體中文註解。</li>
  *   <li>所有數值都驗證範圍；不合法時丟出 {@link OrigCoreConfigException}，
  *       不採用「就近取整」或沉默回退。</li>
- *   <li>{@code threading.worker-threads: 0} 代表「自動決定工作執行緒數」，
- *       不代表不建立執行緒。</li>
+ *   <li>{@code threading.worker-threads} 就是「核心數」設定：
+ *       {@code 0} 代表自動識別，{@code 1 ~ 64} 代表固定使用這麼多條工作執行緒。</li>
+ *   <li>{@code cpu.logical-processors} 與 {@code cpu.physical-cores}：
+ *       {@code 0} 代表自動識別，大於 0 代表由使用者明確宣告。
+ *       OrigCore 一律把「自動識別值」與「使用者宣告值」分開呈現，不混為一談。</li>
  *   <li>{@code threading.region-tick.enabled} 在 0.1.0 一律保持關閉。
  *       若使用者強制開啟，OrigCore 會印出明確警告並強制關閉，
  *       不會宣稱已支援尚未實作的功能。</li>
@@ -26,14 +29,17 @@ import org.bukkit.configuration.file.YamlConfiguration;
  */
 public final class OrigCoreConfig {
 
-    /** 工作執行緒數硬性上限（自動與手動模式都適用）。 */
+    /** 工作執行緒數硬性上限（自動識別與手動設定都適用）。 */
     public static final int HARD_MAX_WORKER_THREADS = 64;
 
-    /** 自動模式下的工作執行緒數上限（保守值，避免過度承諾平行能力）。 */
-    public static final int AUTO_WORKER_THREAD_CAP = 8;
+    /** 自動識別模式下的工作執行緒數預設上限（保守值，避免過度承諾平行能力）。 */
+    public static final int DEFAULT_AUTO_WORKER_THREAD_CAP = 8;
 
     /** 工作佇列容量上限。 */
     public static final int HARD_MAX_QUEUE_CAPACITY = 65536;
+
+    /** 使用者可宣告的處理器數量上限（只用於設定驗證，避免不合理的數值）。 */
+    public static final int HARD_MAX_DECLARED_PROCESSORS = 4096;
 
     /** 診斷取樣間隔允許的範圍（秒）。 */
     public static final int MIN_SAMPLE_INTERVAL_SECONDS = 1;
@@ -42,26 +48,18 @@ public final class OrigCoreConfig {
     public static final String CONFIG_DIRECTORY = "config";
     public static final String FILE_NAME = "origcore.yml";
 
-    /** 執行緒模式。 */
-    public enum ThreadingMode {
-        /** 依 CPU 偵測結果自動決定工作執行緒數（預設）。 */
-        AUTO,
-        /** 使用 {@code manual-worker-threads} 指定的數量。 */
-        MANUAL,
-        /** 不建立背景工作池；OrigCore 只保留品牌、設定與診斷功能。 */
-        DISABLED
-    }
-
     /** 相容性模式。0.1.0 只支援 Paper。 */
     public enum CompatibilityMode {
         /** 完整保留 Paper 的主執行緒模型與插件行為。 */
         PAPER
     }
 
-    private final ThreadingMode threadingMode;
+    private final boolean threadingEnabled;
     private final int workerThreads;
-    private final int manualWorkerThreads;
+    private final int autoWorkerThreadCap;
     private final int queueCapacity;
+    private final int declaredLogicalProcessors;
+    private final int declaredPhysicalCores;
     private final boolean regionTickEnabled;
     private final CompatibilityMode compatibilityMode;
     private final boolean threadChecks;
@@ -72,10 +70,12 @@ public final class OrigCoreConfig {
     private final List<String> warnings;
 
     private OrigCoreConfig(
-        final ThreadingMode threadingMode,
+        final boolean threadingEnabled,
         final int workerThreads,
-        final int manualWorkerThreads,
+        final int autoWorkerThreadCap,
         final int queueCapacity,
+        final int declaredLogicalProcessors,
+        final int declaredPhysicalCores,
         final boolean regionTickEnabled,
         final CompatibilityMode compatibilityMode,
         final boolean threadChecks,
@@ -85,10 +85,12 @@ public final class OrigCoreConfig {
         final boolean logQueueOverflow,
         final List<String> warnings
     ) {
-        this.threadingMode = threadingMode;
+        this.threadingEnabled = threadingEnabled;
         this.workerThreads = workerThreads;
-        this.manualWorkerThreads = manualWorkerThreads;
+        this.autoWorkerThreadCap = autoWorkerThreadCap;
         this.queueCapacity = queueCapacity;
+        this.declaredLogicalProcessors = declaredLogicalProcessors;
+        this.declaredPhysicalCores = declaredPhysicalCores;
         this.regionTickEnabled = regionTickEnabled;
         this.compatibilityMode = compatibilityMode;
         this.threadChecks = threadChecks;
@@ -103,17 +105,29 @@ public final class OrigCoreConfig {
     // 存取子
     // ------------------------------------------------------------------
 
-    public ThreadingMode threadingMode() {
-        return this.threadingMode;
+    /** 是否建立背景工作池。 */
+    public boolean threadingEnabled() {
+        return this.threadingEnabled;
     }
 
-    /** 設定的工作執行緒數；0 代表自動。 */
+    /** 設定的工作執行緒數；0 代表自動識別。 */
     public int workerThreads() {
         return this.workerThreads;
     }
 
-    public int manualWorkerThreads() {
-        return this.manualWorkerThreads;
+    /** 自動識別時的工作執行緒數上限；只在 {@link #workerThreads()} 為 0 時有意義。 */
+    public int autoWorkerThreadCap() {
+        return this.autoWorkerThreadCap;
+    }
+
+    /** 使用者宣告的邏輯處理器數；0 代表自動識別。 */
+    public int declaredLogicalProcessors() {
+        return this.declaredLogicalProcessors;
+    }
+
+    /** 使用者宣告的實體 CPU 核心數；0 代表自動識別。 */
+    public int declaredPhysicalCores() {
+        return this.declaredPhysicalCores;
     }
 
     public int queueCapacity() {
@@ -153,17 +167,14 @@ public final class OrigCoreConfig {
         return this.warnings;
     }
 
-    /** 依模式決定實際要求的工作執行緒數；0 表示交由 CPU 偵測自動決定。 */
+    /** 交給 CPU 偵測換算的工作執行緒數；0 表示自動識別。 */
     public int requestedWorkerThreads() {
-        return switch (this.threadingMode) {
-            case AUTO -> 0;
-            case MANUAL -> this.manualWorkerThreads;
-            case DISABLED -> 0;
-        };
+        return this.workerThreads;
     }
 
+    /** 是否要建立背景工作池。 */
     public boolean createsWorkerPool() {
-        return this.threadingMode != ThreadingMode.DISABLED;
+        return this.threadingEnabled;
     }
 
     // ------------------------------------------------------------------
@@ -198,12 +209,20 @@ public final class OrigCoreConfig {
         final YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
         final List<String> warnings = new ArrayList<>();
 
-        final ThreadingMode threadingMode = parseEnum(
-            ThreadingMode.class,
-            "threading.mode",
-            yaml.getString("threading.mode", "auto"),
-            warnings
-        );
+        // 早期開發版本使用 threading.mode / threading.manual-worker-threads。
+        // 這裡明確告知已被取代，不默默忽略使用者寫下的設定。
+        if (yaml.isSet("threading.mode")) {
+            warnings.add("threading.mode is no longer used and was ignored; it has been replaced by "
+                + "threading.enabled (true/false) and threading.worker-threads "
+                + "(0 = auto-detect, 1 ~ " + HARD_MAX_WORKER_THREADS + " = fixed).");
+        }
+        if (yaml.isSet("threading.manual-worker-threads")) {
+            warnings.add("threading.manual-worker-threads is no longer used and was ignored; set the "
+                + "worker thread count with threading.worker-threads instead "
+                + "(0 = auto-detect, 1 ~ " + HARD_MAX_WORKER_THREADS + " = fixed).");
+        }
+
+        final boolean threadingEnabled = yaml.getBoolean("threading.enabled", true);
 
         final int workerThreads = requireRange(
             "threading.worker-threads",
@@ -212,11 +231,25 @@ public final class OrigCoreConfig {
             HARD_MAX_WORKER_THREADS
         );
 
-        final int manualWorkerThreads = requireRange(
-            "threading.manual-worker-threads",
-            yaml.getInt("threading.manual-worker-threads", 2),
+        final int autoWorkerThreadCap = requireRange(
+            "threading.auto-worker-thread-cap",
+            yaml.getInt("threading.auto-worker-thread-cap", DEFAULT_AUTO_WORKER_THREAD_CAP),
             1,
             HARD_MAX_WORKER_THREADS
+        );
+
+        final int declaredLogicalProcessors = requireRange(
+            "cpu.logical-processors",
+            yaml.getInt("cpu.logical-processors", 0),
+            0,
+            HARD_MAX_DECLARED_PROCESSORS
+        );
+
+        final int declaredPhysicalCores = requireRange(
+            "cpu.physical-cores",
+            yaml.getInt("cpu.physical-cores", 0),
+            0,
+            HARD_MAX_DECLARED_PROCESSORS
         );
 
         final int queueCapacity = requireRange(
@@ -257,21 +290,19 @@ public final class OrigCoreConfig {
         final boolean logWorkerErrors = yaml.getBoolean("diagnostics.log-worker-errors", true);
         final boolean logQueueOverflow = yaml.getBoolean("diagnostics.log-queue-overflow", true);
 
-        if (threadingMode == ThreadingMode.MANUAL && workerThreads != 0) {
-            warnings.add("With threading.mode=manual, threading.worker-threads must be 0 but is "
-                + workerThreads + ". manual-worker-threads=" + manualWorkerThreads + " will be used instead.");
-        }
-        if (threadingMode == ThreadingMode.DISABLED) {
-            warnings.add("threading.mode=disabled: OrigCore will not create a background worker pool. "
+        if (!threadingEnabled) {
+            warnings.add("threading.enabled=false: OrigCore will not create a background worker pool. "
                 + "Behaviour is identical to unmodified Paper (branding, config validation and "
                 + "diagnostics are still active).");
         }
 
         final OrigCoreConfig config = new OrigCoreConfig(
-            threadingMode,
+            threadingEnabled,
             workerThreads,
-            manualWorkerThreads,
+            autoWorkerThreadCap,
             queueCapacity,
+            declaredLogicalProcessors,
+            declaredPhysicalCores,
             regionTickEnabled,
             compatibilityMode,
             threadChecks,
@@ -363,11 +394,14 @@ public final class OrigCoreConfig {
 
         // 先寫入所有設定值，再補上註解。
         // 這樣可確保產生出來的檔案同時具備完整註解與正確的預設值。
-        yaml.set("threading.mode", "auto");
+        yaml.set("threading.enabled", true);
         yaml.set("threading.worker-threads", 0);
-        yaml.set("threading.manual-worker-threads", 2);
+        yaml.set("threading.auto-worker-thread-cap", DEFAULT_AUTO_WORKER_THREAD_CAP);
         yaml.set("threading.queue-capacity", 1024);
         yaml.set("threading.region-tick.enabled", false);
+
+        yaml.set("cpu.logical-processors", 0);
+        yaml.set("cpu.physical-cores", 0);
 
         yaml.set("compatibility.mode", "paper");
         yaml.set("compatibility.thread-checks", true);
@@ -381,17 +415,19 @@ public final class OrigCoreConfig {
         yaml.setComments("threading",
             List.of("工作執行緒與排程相關設定。",
                 "OrigCore 只把「明確可與世界狀態分離的純計算工作」放進背景工作池。"));
-        yaml.setComments("threading.mode",
-            List.of("工作池模式。允許值：",
-                "  auto     = 依 CPU 偵測結果自動決定工作執行緒數（預設）",
-                "  manual   = 使用 manual-worker-threads 指定的數量",
-                "  disabled = 不建立背景工作池，行為等同未修改的 Paper"));
+        yaml.setComments("threading.enabled",
+            List.of("是否建立 OrigCore 背景工作池。",
+                "  true  = 建立（預設）",
+                "  false = 不建立；品牌、設定驗證與診斷仍保留，行為等同未修改的 Paper"));
         yaml.setComments("threading.worker-threads",
-            List.of("工作執行緒數。0 代表自動決定（不是不建立執行緒）。",
-                "允許範圍 0 ~ " + HARD_MAX_WORKER_THREADS + "。",
-                "注意：手動指定時仍不得超過上限，超過會被拒絕並報錯。"));
-        yaml.setComments("threading.manual-worker-threads",
-            List.of("threading.mode=manual 時實際使用的工作執行緒數。",
+            List.of("★核心數設定★ OrigCore 背景工作執行緒數。",
+                "  0      = 自動識別（預設）：依 cpu.* 宣告值或偵測到的可用處理器數自動決定",
+                "  1 ~ " + HARD_MAX_WORKER_THREADS + " = 固定使用這麼多條（不受 auto-worker-thread-cap 限制）",
+                "注意：0 代表「自動識別」，不是「不建立執行緒」。",
+                "允許範圍 0 ~ " + HARD_MAX_WORKER_THREADS + "；超範圍會被拒絕並報錯，不會默默接受。"));
+        yaml.setComments("threading.auto-worker-thread-cap",
+            List.of("自動識別時的工作執行緒數上限（只在 worker-threads: 0 時有效）。",
+                "預設 " + DEFAULT_AUTO_WORKER_THREAD_CAP + "：OrigCore 刻意保守，不因為機器核心多就建立大量執行緒。",
                 "允許範圍 1 ~ " + HARD_MAX_WORKER_THREADS + "。"));
         yaml.setComments("threading.queue-capacity",
             List.of("有界工作佇列容量。佇列滿載時新工作會被「拒絕」，",
@@ -402,6 +438,20 @@ public final class OrigCoreConfig {
                 "區域化 Tick 尚未實作；此值目前強制保持 false，設為 true 只會產生警告。"));
         yaml.setComments("threading.region-tick.enabled",
             List.of("0.1.0 必須為 false。設為 true 不會有任何效果。"));
+
+        yaml.setComments("cpu",
+            List.of("CPU 資源識別設定。",
+                "Java 標準 API 在 Windows／macOS 取不到實體核心數與容器配額，",
+                "因此這裡可以「由使用者明確宣告」，補足自動識別不到的部分。",
+                "  0  = 自動識別（預設）；識別不到時 OrigCore 會回報「未知」並說明原因，不會用猜測值冒充。",
+                "  >0 = 使用者宣告；優先於自動識別結果，日誌會標示為 operator-declared。"));
+        yaml.setComments("cpu.logical-processors",
+            List.of("邏輯處理器數；自動模式（worker-threads: 0）會用它來決定工作執行緒數。",
+                "允許範圍 0 ~ " + HARD_MAX_DECLARED_PROCESSORS + "。",
+                "例：偵測不到正確的核心數時，可直接填入實際可用核心數。"));
+        yaml.setComments("cpu.physical-cores",
+            List.of("實體 CPU 核心數；只用於診斷顯示，不會用來決定工作執行緒數。",
+                "允許範圍 0 ~ " + HARD_MAX_DECLARED_PROCESSORS + "。"));
 
         yaml.setComments("compatibility",
             List.of("插件相容性相關設定。OrigCore 以保留 Paper 的主執行緒模型為最高原則。"));

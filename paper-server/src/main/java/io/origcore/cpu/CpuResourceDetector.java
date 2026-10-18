@@ -22,7 +22,8 @@ import java.util.Map;
  * </ul>
  *
  * <p><b>安全原則：</b>偵測不到就回報未知。OrigCore 不會捏造數值，
- * 也不會宣稱已取得「準確的實體 CPU 核心數」。</p>
+ * 也不會宣稱已取得「準確的實體 CPU 核心數」。使用者可以在 {@code cpu.*} 明確宣告數值；
+ * 宣告值會另外標示為 {@code operator-declared}，不會偽裝成偵測結果。</p>
  */
 public final class CpuResourceDetector {
 
@@ -35,18 +36,33 @@ public final class CpuResourceDetector {
     }
 
     /**
+     * 偵測輸入。
+     *
+     * <p>一律由 {@code OrigCoreConfig} 提供，讓「設定值 → 實際執行緒數」的推導
+     * 只存在於本類別一個地方。</p>
+     *
+     * @param workerThreads             設定的工作執行緒數；0 表示自動識別
+     * @param hardMaxWorkerThreads      工作執行緒數硬性上限
+     * @param autoWorkerThreadCap       自動識別時的工作執行緒數上限
+     * @param declaredLogicalProcessors 使用者宣告的邏輯處理器數；0 表示自動識別
+     * @param declaredPhysicalCores     使用者宣告的實體核心數；0 表示自動識別
+     */
+    public record Request(
+        int workerThreads,
+        int hardMaxWorkerThreads,
+        int autoWorkerThreadCap,
+        int declaredLogicalProcessors,
+        int declaredPhysicalCores
+    ) {
+    }
+
+    /**
      * 執行偵測並計算 OrigCore 要建立的工作執行緒數。
      *
-     * @param configuredWorkerThreads {@code threading.worker-threads} 設定值；0 表示自動
-     * @param hardMaxWorkerThreads    工作執行緒數的硬性上限
-     * @param autoWorkerThreadCap     自動模式下的建議上限
+     * @param request 偵測輸入
      * @return 偵測結果，永不為 {@code null}
      */
-    public static CpuResourceInfo detect(
-        final int configuredWorkerThreads,
-        final int hardMaxWorkerThreads,
-        final int autoWorkerThreadCap
-    ) {
+    public static CpuResourceInfo detect(final Request request) {
         final List<String> notes = new ArrayList<>();
 
         final int jvmAvailable = Math.max(1, Runtime.getRuntime().availableProcessors());
@@ -54,10 +70,10 @@ public final class CpuResourceDetector {
         final int physicalCores = detectPhysicalCores(notes);
         final int containerQuota = detectContainerQuota(notes);
 
+        noteDeclaredValues(request, osLogical, physicalCores, jvmAvailable, notes);
+
         final int effectiveWorkerThreads = computeEffectiveWorkerThreads(
-            configuredWorkerThreads,
-            hardMaxWorkerThreads,
-            autoWorkerThreadCap,
+            request,
             jvmAvailable,
             containerQuota,
             notes
@@ -69,9 +85,41 @@ public final class CpuResourceDetector {
             physicalCores,
             containerQuota,
             containerQuota != CpuResourceInfo.UNKNOWN,
+            request.declaredLogicalProcessors(),
+            request.declaredPhysicalCores(),
             effectiveWorkerThreads,
             notes
         );
+    }
+
+    /**
+     * 把使用者宣告值與自動識別值並列記錄，讓日誌看得出哪個數值生效。
+     *
+     * <p>使用者宣告值不會覆蓋偵測欄位，只會影響工作執行緒數的推導。</p>
+     */
+    private static void noteDeclaredValues(
+        final Request request,
+        final int osLogical,
+        final int physicalCores,
+        final int jvmAvailable,
+        final List<String> notes
+    ) {
+        final int declaredLogical = request.declaredLogicalProcessors();
+        if (declaredLogical > 0) {
+            final int detected = osLogical != CpuResourceInfo.UNKNOWN ? osLogical : jvmAvailable;
+            notes.add("cpu.logical-processors=" + declaredLogical + " was declared by the operator; it "
+                + "overrides the detected value (" + detected + ") when deriving the worker thread count.");
+        }
+
+        final int declaredPhysical = request.declaredPhysicalCores();
+        if (declaredPhysical > 0) {
+            final String detected = physicalCores == CpuResourceInfo.UNKNOWN
+                ? "auto-detection is unavailable on this platform"
+                : "auto-detected value: " + physicalCores;
+            notes.add("cpu.physical-cores=" + declaredPhysical + " was declared by the operator ("
+                + detected + "). This value is reported for diagnostics only; it does NOT derive the "
+                + "worker thread count.");
+        }
     }
 
     /**
@@ -222,35 +270,49 @@ public final class CpuResourceDetector {
      * 依設定與偵測結果決定實際工作執行緒數。
      *
      * <ul>
-     *   <li>{@code configured > 0}：使用手動值（不得超過硬性上限）。</li>
-     *   <li>{@code configured == 0}：自動模式。以容器配額（若可信）與 JVM 可用處理器數
-     *       取較小者為基準，保留一條執行緒給主執行緒使用，且不超過自動模式上限。</li>
+     *   <li>{@code workerThreads > 0}：使用固定值（不得超過硬性上限）。</li>
+     *   <li>{@code workerThreads == 0}：自動識別。優先採用使用者宣告的邏輯處理器數；
+     *       其次為可信的容器配額與 JVM 可用處理器數取較小者。
+     *       保留一條執行緒給主執行緒使用，且不超過自動識別上限。</li>
      * </ul>
      */
     private static int computeEffectiveWorkerThreads(
-        final int configured,
-        final int hardMax,
-        final int autoCap,
+        final Request request,
         final int jvmAvailable,
         final int containerQuota,
         final List<String> notes
     ) {
+        final int configured = request.workerThreads();
         if (configured > 0) {
+            final int hardMax = request.hardMaxWorkerThreads();
             final int clamped = Math.min(configured, hardMax);
             if (clamped != configured) {
                 notes.add("Configured worker thread count " + configured + " exceeds the hard limit "
                     + hardMax + "; clamped to " + clamped + ".");
             }
+            notes.add("threading.worker-threads=" + configured + " was set to a fixed value; CPU "
+                + "detection is NOT consulted for the thread count.");
             return clamped;
         }
 
-        final int base = containerQuota != CpuResourceInfo.UNKNOWN
-            ? Math.min(containerQuota, jvmAvailable)
-            : jvmAvailable;
-        final int cap = Math.min(hardMax, autoCap);
+        final int declaredLogical = request.declaredLogicalProcessors();
+        final int base;
+        final String source;
+        if (declaredLogical > 0) {
+            base = declaredLogical;
+            source = "cpu.logical-processors=" + declaredLogical + " (declared by the operator)";
+        } else if (containerQuota != CpuResourceInfo.UNKNOWN) {
+            base = Math.min(containerQuota, jvmAvailable);
+            source = "the trusted container CPU quota " + containerQuota;
+        } else {
+            base = jvmAvailable;
+            source = "the JVM available processor count " + jvmAvailable;
+        }
+
+        final int cap = Math.min(request.hardMaxWorkerThreads(), request.autoWorkerThreadCap());
         final int workers = Math.max(1, Math.min(cap, base - 1));
-        notes.add("worker-threads=0 (auto): derived " + workers + " worker thread(s) from "
-            + base + " available processor(s) (auto-mode cap " + cap + "). "
+        notes.add("worker-threads=0 (auto): derived " + workers + " worker thread(s) from " + source
+            + " with an auto cap of " + cap + ". "
             + "This is only the number of OrigCore-managed background threads; it does NOT mean "
             + "the Minecraft world tick can be parallelised.");
         return workers;

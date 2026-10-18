@@ -115,8 +115,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 
 執行期訊息必須是 ASCII 的理由：Paper 的 `log4j2.xml` 未指定 charset，
 在非 UTF-8 環境（例如 Windows 代碼頁 936）下寫入中文會被寫壞。
-`CpuResourceDetectorTest#descriptionIsAsciiOnlySoItCannotBreakOnNonUtf8Consoles`
-與 `OrigCoreConfigTest#invalidThreadingModeIsRejectedWithTheAllowedValues`
+`CpuResourceDetectorTest#descriptionMentionsDeclaredValuesAndStaysAsciiOnly`
+與 `OrigCoreConfigTest#workerThreadCountAboveTheHardLimitIsRejected`
 會實際檢查這件事，請不要繞過它們。
 
 ---

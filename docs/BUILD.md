@@ -160,7 +160,7 @@ cd ..\..\..\..
 # 1) 編譯
 .\gradlew.bat :paper-server:compileJava
 
-# 2) OrigCore 單元測試（38 項，不需要伺服器）
+# 2) OrigCore 單元測試（46 項，不需要伺服器）
 .\gradlew.bat :paper-server:origcoreTest
 
 # 3) 完整檢查（含掃描 jar 中不該被呼叫的 API，以及 Paper 自己的測試）

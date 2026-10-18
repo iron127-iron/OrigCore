@@ -97,8 +97,28 @@ Eclipse Temurin 25.0.4
 OrigCore 0.1.0（Minecraft 1.21.11，Paper upstream ver/1.21.11@c5eb079）
 -Xms/-Xmx = 2048 MB
 全新產生的世界，沒有玩家，沒有插件
-worker-threads: 0（auto）→ 實際上建立 8 條工作執行緒，佇列容量 1024
+worker-threads: 0（自動識別）→ 實際上建立 8 條工作執行緒，佇列容量 1024
 ```
+
+### 核心數設定的啟動驗證（不是效能量測）
+
+三種設定都以 `tools/smoke-test.ps1` 實際啟動驗證過（`exit code 0`、`StoppedCleanly=True`），
+以下是啟動日誌的原文節錄：
+
+| 設定 | 啟動日誌（節錄） | 實際執行緒數 |
+| --- | --- | --- |
+| `worker-threads: 0` | `worker-threads=0 (auto): derived 8 worker thread(s) from the JVM available processor count 20 with an auto cap of 8.` | 8 |
+| `worker-threads: 0` + `cpu.logical-processors: 6` | `derived 5 worker thread(s) from cpu.logical-processors=6 (declared by the operator) with an auto cap of 8.` | 5 |
+| `worker-threads: 3` | `threading.worker-threads=3 was set to a fixed value; CPU detection is NOT consulted for the thread count.` | 3 |
+
+同一批驗證也確認 `cpu.physical-cores: 12` 只出現在診斷輸出：
+
+```text
+- cpu.physical-cores=12 was declared by the operator (auto-detection is unavailable on this platform).
+  This value is reported for diagnostics only; it does NOT derive the worker thread count.
+```
+
+以上只證明「設定 → 執行緒數」的對應正確，**不代表**任何效能結論。
 
 ### 第一次運行（全新產生世界）
 
@@ -163,7 +183,9 @@ safety violations: 0 (mode WARN)
 | `metrics.sample-interval-seconds` | 取樣間隔；太短會讓摘要次數變多。 |
 | `compatibility.thread-checks` | `true`（`WARN`）比 `false`（`OFF`）多一些執行緒比較成本。 |
 | `diagnostics.log-worker-errors` / `log-queue-overflow` | 只在有例外／拒絕時才有成本。 |
-| `threading.mode: disabled` | 可用來量測「與 Paper 完全相同」的情境。 |
+| `threading.enabled: false` | 可用來量測「與 Paper 完全相同」的情境（不建立背景工作池）。 |
+| `threading.worker-threads` | `0` = 自動識別；固定值可讓「執行緒數」成為受控變因。 |
+| `cpu.logical-processors` | 偵測不到正確核心數時可明確宣告，讓自動識別的基準可重現。 |
 
 ---
 

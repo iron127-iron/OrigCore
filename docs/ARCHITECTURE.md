@@ -191,6 +191,11 @@ QUEUED ──► RUNNING ──► SUCCESS
 
 ## 10. CPU 資源偵測與工作執行緒數推導
 
+「核心數」的設定入口只有一個：`threading.worker-threads`。
+
+- `0` = 自動識別（預設）
+- `1` ~ `64` = 固定使用這個數量，**不參考**偵測結果
+
 `CpuResourceInfo` **刻意分開存放**不同來源的處理器數量，不讓它們互相冒充：
 
 | 欄位 | 來源 | 取不到時 |
@@ -199,24 +204,36 @@ QUEUED ──► RUNNING ──► SUCCESS
 | `osLogicalProcessors` | Linux `/proc/cpuinfo` 的 `processor` 行數；其他平台退回 `OperatingSystemMXBean` | `UNKNOWN` |
 | `jvmAvailableProcessors` | `Runtime#availableProcessors()` | 至少 1 |
 | `containerQuotaCpus` | cgroup v2 `cpu.max` → cgroup v1 `cpu.cfs_quota_us` / `cpu.cfs_period_us` | `UNKNOWN` |
+| `declaredLogicalProcessors` | `cpu.logical-processors`（使用者宣告；**不經偵測**） | `NOT_DECLARED`（= 0） |
+| `declaredPhysicalCores` | `cpu.physical-cores`（使用者宣告；**不經偵測**） | `NOT_DECLARED`（= 0） |
 | `effectiveWorkerThreads` | 由下列公式推導 | — |
+
+使用者宣告值**不會覆蓋**任何偵測欄位：兩者並列顯示，宣告值在日誌中標示為 `operator-declared`，
+因此「偵測到的」與「使用者填的」永遠分得清楚。
 
 推導方式（`CpuResourceDetector#computeEffectiveWorkerThreads`）：
 
 ```
-configured > 0 ：  min(configured, hardMax)
-configured == 0：  base = (containerQuota 可信) ? min(containerQuota, jvmAvailable) : jvmAvailable
-                   cap  = min(hardMax, autoCap)          // 預設 hardMax = 64, autoCap = 8
-                   workers = max(1, min(cap, base - 1))  // 保留一個處理器給主執行緒
+workerThreads > 0 ： min(workerThreads, hardMax)        // 固定值，不呼叫偵測
+
+workerThreads == 0： base = declaredLogicalProcessors   若 > 0
+                          else (containerQuota 可信) ? min(containerQuota, jvmAvailable)
+                          else jvmAvailable
+                    cap  = min(hardMax, autoWorkerThreadCap)   // 預設 hardMax = 64, autoWorkerThreadCap = 8
+                    workers = max(1, min(cap, base - 1))       // 保留一個處理器給主執行緒
 ```
 
-`hardMax = 64`、`autoCap = 8`。`autoCap` 刻意保守：OrigCore 不主張「核心越多就越快」。
+`cpu.physical-cores` **不參與**這個推導：Java 標準 API 無法驗證它，用它推導等於把使用者輸入
+當成硬體事實。它只出現在診斷輸出中。
+
+`autoWorkerThreadCap` 刻意保守：OrigCore 不主張「核心越多就越快」。
 
 限制與誠實聲明（也會寫進啟動日誌）：
 
 - Windows／macOS 的 Java 標準 API 未提供實體核心數與容器配額，因此一律回報「未知」並說明原因，
   OrigCore **不會**用邏輯處理器數冒充實體核心數，也不會用猜測值代替容器配額。
-- `worker-threads=0` 是「自動決定」，**不是**「不建立執行緒」。
+- 使用者宣告值只是「使用者說的事實」，OrigCore 不驗證、也不宣稱它是硬體實測值。
+- `worker-threads=0` 是「自動識別」，**不是**「不建立執行緒」。
 - 工作執行緒數**不代表** Minecraft 世界狀態可以平行處理。
 
 ---

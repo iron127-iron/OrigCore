@@ -102,7 +102,7 @@ public final class ThreadCoordinator implements AutoCloseable {
     private void logStartup() {
         if (this.pool == null) {
             LOGGER.info("{} thread coordinator started: background worker pool disabled "
-                + "(threading.mode=disabled).", OrigCore.NAME);
+                + "(threading.enabled=false).", OrigCore.NAME);
             return;
         }
         LOGGER.info("{} thread coordinator started: {} worker thread(s) named '{}N', "
@@ -185,7 +185,7 @@ public final class ThreadCoordinator implements AutoCloseable {
         return this.dispatcher;
     }
 
-    /** 背景工作排程器；{@code threading.mode=disabled} 時為 {@code null}。 */
+    /** 背景工作排程器；{@code threading.enabled=false} 時為 {@code null}。 */
     public WorkScheduler scheduler() {
         return this.scheduler;
     }

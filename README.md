@@ -50,9 +50,10 @@ OrigCore 0.1.0 的定位很明確：**以 Paper 為基底，先把「可受控�
 - 非阻塞的 `MainThreadDispatcher`：使用 Paper 既有的主執行緒工作佇列，**不做**同步等待。
 - `ThreadSafetyGuard`：開發／測試用的執行緒安全違規偵測（違規類型、執行緒名稱、呼叫堆疊、累計次數）。
 - CPU 資源偵測：實體核心數、作業系統邏輯處理器數、JVM 可用處理器數、容器配額**分開存放**，取不到就回報「未知」。
+- 核心數設定：`threading.worker-threads` 可填固定值，`0` 代表自動識別；偵測不到時可用 `cpu.*` 明確宣告（標示為 `operator-declared`，不冒稱偵測結果）。
 - 設定檔驗證：範圍檢查、明確錯誤、不沉默接受不合法值；`region-tick.enabled` 強制為 `false`。
 - 診斷指標：TPS、MSPT、主執行緒耗時、工作執行緒數與忙碌數、佇列長度、工作計數、佇列等待與執行耗時百分位數。
-- OrigCore 專屬單元測試（38 項，不需要啟動伺服器）。
+- OrigCore 專屬單元測試（46 項，不需要啟動伺服器）。
 
 ---
 
@@ -177,13 +178,35 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 
 ### `threading`
 
+「核心數」就是 `threading.worker-threads`：設 `0` 讓 OrigCore **自動識別**，或直接填 `1` ~ `64` 固定使用這個數量。
+
 | 鍵 | 預設 | 允許值 / 範圍 | 說明 |
 | --- | --- | --- | --- |
-| `threading.mode` | `auto` | `auto`、`manual`、`disabled` | `auto` 依 CPU 偵測結果決定；`manual` 使用 `manual-worker-threads`；`disabled` 完全不建立背景工作池（其餘品牌、設定驗證與診斷仍保留）。 |
-| `threading.worker-threads` | `0` | `0` ~ `64` | **`0` 代表「自動決定」，不是「不建立執行緒」。** |
-| `threading.manual-worker-threads` | `2` | `1` ~ `64` | 僅 `threading.mode: manual` 時使用。 |
+| `threading.enabled` | `true` | `true` / `false` | `false` 完全不建立背景工作池（其餘品牌、設定驗證與診斷仍保留，行為等同未修改的 Paper）。 |
+| `threading.worker-threads` | `0` | `0` ~ `64` | **★核心數設定★**。`0` = **自動識別**（依 `cpu.*` 宣告值或偵測到的可用處理器數推導）；`1` ~ `64` = 固定使用這個數量，不參考偵測結果。**`0` 代表「自動識別」，不是「不建立執行緒」。** |
+| `threading.auto-worker-thread-cap` | `8` | `1` ~ `64` | 只在 `worker-threads: 0` 時有效：自動識別的上限。刻意保守，不因為機器核心多就建立大量執行緒。 |
 | `threading.queue-capacity` | `1024` | `1` ~ `65536` | 有界佇列容量。滿載時新工作被**拒絕**，不會改由呼叫端執行。 |
 | `threading.region-tick.enabled` | `false` | **0.1.0 必須為 `false`** | 保留設定。設為 `true` 只會產生警告並被強制關閉。 |
+
+### `cpu`
+
+自動識別在 Windows／macOS 取不到實體核心數與容器配額（Java 標準 API 沒有這個能力）。
+這裡可以**由使用者明確宣告**；宣告值一定標示為 `operator-declared`，**不會**偽裝成偵測結果。
+
+| 鍵 | 預設 | 允許值 / 範圍 | 說明 |
+| --- | --- | --- | --- |
+| `cpu.logical-processors` | `0` | `0` ~ `4096` | `0` = 自動識別。大於 `0` 時**優先於**偵測結果，用來決定自動模式的工作執行緒數。 |
+| `cpu.physical-cores` | `0` | `0` ~ `4096` | `0` = 自動識別。只影響診斷顯示，**不會**用來決定工作執行緒數。 |
+
+推導規則（`threading.worker-threads: 0` 時）：
+
+```text
+1. cpu.logical-processors > 0            → base = 該宣告值
+2. 否則容器 CPU 配額可信                    → base = min(配額, JVM 可用處理器數)
+3. 否則                                   → base = JVM 可用處理器數
+workers = max(1, min(min(64, auto-worker-thread-cap), base - 1))   # 保留一個處理器給主執行緒
+```
+
 
 ### `compatibility`
 
@@ -205,7 +228,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 
 - **不合法或超範圍的值會讓 OrigCore 停用**，並在主控台印出明確錯誤（含設定鍵、目前值、允許範圍／允許值）。
 - 伺服器本身仍會正常啟動，行為等同未修改的 Paper；修正設定後重新啟動即可。
-- `threading.mode=manual` 但 `worker-threads != 0` 會產生警告。
+- 舊開發版本的 `threading.mode` 與 `threading.manual-worker-threads` 已移除；若仍存在會產生明確警告（不會默默忽略）。
+- `threading.enabled: false` 會產生警告，並明確說明不會建立背景工作池。
 - 系統屬性 `-Dorigcore.thread-check.mode=off|warn|strict` 可覆寫 `compatibility.thread-checks`。
 
 ---
