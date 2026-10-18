@@ -44,6 +44,9 @@ logs/
 # OrigCore - 本機啟動驗證用的執行目錄（含世界資料，體積很大）
 run-*/
 
+# OrigCore - 開發記憶檔（含使用者原始提示詞與本機路徑，只留在本機，不進 Git）
+ai-memory.txt
+
 !gradle/wrapper/gradle-wrapper.jar
 
 test-plugin.settings.gradle.kts

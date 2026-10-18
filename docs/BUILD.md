@@ -222,6 +222,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 | `exp/region-tick` | 區域化 Tick 實驗。未經驗證不得合併回 `main`。 |
 | `release/0.1.0` | 0.1.0 發布標籤。 |
 
+OrigCore 自己的遠端：`origin` → <https://github.com/iron127-iron/OrigCore>
+（`upstream` 仍然指向 `PaperMC/Paper`，只用來同步上游，**不要 push 到 upstream**）。
+
 CI 位於 `.github/workflows/build.yml`，執行內容：
 
 1. `applyPatches`
@@ -233,6 +236,30 @@ CI 位於 `.github/workflows/build.yml`，執行內容：
 
 CI 只建置 Minecraft 1.21.11，**不建立多版本矩陣**，也**不執行 `gradlew check`**
 （Paper 自己的測試任務會啟動測試用伺服器，不適合放在這個流程裡）。
+
+### CI 的實際狀態（誠實聲明）
+
+- `.github/workflows/build.yml` 從**未被執行過**。
+- GitHub 的行為是：**在同一次 push 中新增的 workflow 不會被那次 push 觸發**。
+  0.1.0 首次 push 時 `build.yml` 就是這樣被新增的，所以 Actions 上沒有任何 run。
+- 因此第一次 push 之後，請到 Actions →「Build OrigCore」→ Run workflow
+  （workflow 已含 `workflow_dispatch`），或再 push 一次任何 commit 來觸發。
+- 本專案**沒有**任何「CI 已通過」的紀錄，請不要把「有 CI 檔案」當成「CI 綠燈」。
+
+### 本機是 shallow clone 的坑
+
+建立這個 fork 時用的是 `git clone --depth 1`，導致本機 repo 是 **shallow**，
+GitHub 會直接拒絕 push（`remote: fatal: did not receive expected object ...`）。
+補救（只需一次，實測約 20 秒、約 60 MB）：
+
+```bash
+git fetch --unshallow --no-progress upstream \
+  "+refs/heads/ver/1.21.11:refs/remotes/upstream/ver/1.21.11"
+```
+
+推上去之後：`git push -u origin main`、`git push origin exp/region-tick`、
+`git push origin release/0.1.0`。**不要**用 `git push --all` 或 `--mirror`
+（`paper-server/src/minecraft` 是巢狀 repo，它的 remote 指向本機快取）。
 
 ### ★把 OrigCore 推上 GitHub 之前請先處理這四個上游 workflow★
 
