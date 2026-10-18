@@ -179,8 +179,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 - 主控台出現 `This server is running OrigCore version ... (Implementing API version 1.21.11-R0.1-SNAPSHOT)`。
 - 產生 `config/origcore.yml`。
 - 出現 CPU 偵測報告與 `OrigCore thread coordinator started: ...`。
-- 出現 `===== OrigCore diagnostics summary #N =====`。
-- 關閉時出現最終統計，並寫出 `logs/origcore-diagnostics.txt`。
+- 出現 `[OrigCore] diagnostics: periodic summaries are DISABLED (0.1.0 default); ...`。
+- 關閉時出現 `OrigCore final stats` 與 `===== OrigCore final diagnostics summary =====`（**只有這一次**；
+  整個執行期間不應出現任何 `diagnostics summary #N`），並寫出 `logs/origcore-diagnostics.txt`。
 - 行程結束碼為 `0`。
 
 > **關於 `gradlew check`：** 這個任務除了 OrigCore 的單元測試與 `scanJarForBadCalls` 之外，
@@ -237,14 +238,26 @@ CI 位於 `.github/workflows/build.yml`，執行內容：
 CI 只建置 Minecraft 1.21.11，**不建立多版本矩陣**，也**不執行 `gradlew check`**
 （Paper 自己的測試任務會啟動測試用伺服器，不適合放在這個流程裡）。
 
-### CI 的實際狀態（誠實聲明）
+### CI 的實際狀態（誠實聲明，2026-10-18 更新）
 
-- `.github/workflows/build.yml` 從**未被執行過**。
-- GitHub 的行為是：**在同一次 push 中新增的 workflow 不會被那次 push 觸發**。
-  0.1.0 首次 push 時 `build.yml` 就是這樣被新增的，所以 Actions 上沒有任何 run。
-- 因此第一次 push 之後，請到 Actions →「Build OrigCore」→ Run workflow
-  （workflow 已含 `workflow_dispatch`），或再 push 一次任何 commit 來觸發。
-- 本專案**沒有**任何「CI 已通過」的紀錄，請不要把「有 CI 檔案」當成「CI 綠燈」。
+- GitHub 的行為：**在同一次 push 中新增的 workflow 不會被那次 push 觸發**。
+  0.1.0 第一次 push 時 `build.yml` 就是這樣被新增的，所以**那個 push 沒有產生 run**；
+  之後任何 push 都會正常觸發（不需要先手動 Run workflow）。
+- **實測結果：兩次 push 的 CI 都成功**（`ubuntu-latest`）：
+
+  | 觸發 commit | 事件 | 結果 | Run |
+  | --- | --- | --- | --- |
+  | `05316122e` | push | ✅ success | [39091507636](https://github.com/iron127-iron/OrigCore/actions/runs/39091507636) |
+  | `bc7adfaf3` | push | ✅ success | [39092573829](https://github.com/iron127-iron/OrigCore/actions/runs/39092573829) |
+
+- 第二次的步驟全部 success：
+  Checkout → Set up JDK 21 → Set up Gradle → Apply upstream patch stack → Compile →
+  OrigCore unit tests → Upload test results → Verify the patch stack is reproducible →
+  Build server jars → Upload server jars。
+  產物：`origcore-test-results`（約 5.8 KB）、`origcore-jars`（約 152 MB）。
+- 也就是說：**「patch 堆疊可重現」與「OrigCore 單元測試」在 GitHub 的 Linux runner 上也通過了**，
+  本專案的建置流程不限於本機 Windows。仍然請以 Actions 頁面的最新結果為準；
+  `workflow_dispatch` 已存在，需要時可以手動 Run workflow。
 
 ### 本機是 shallow clone 的坑
 

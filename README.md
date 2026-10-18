@@ -40,6 +40,7 @@ OrigCore 0.1.0 的定位很明確：**以 Paper 為基底，先把「可受控�
 | 建置工具鏈 | Gradle Wrapper 9.2.0，Java toolchain 21（`options.release = 21`） |
 | 產出 | `origcore-bundler-<版本>-mojmap.jar`、`origcore-paperclip-<版本>-mojmap.jar` |
 | 建置狀態 | `applyPatches`、`:paper-server:compileJava`、`:paper-server:origcoreTest`、`createMojmapBundlerJar`、`createMojmapPaperclipJar` 皆已驗證成功 |
+| CI 狀態 | [`.github/workflows/build.yml`](.github/workflows/build.yml) 已在 GitHub 的 `ubuntu-latest` 上**執行成功**（patch 堆疊可重現 + 單元測試 + 產出 JAR）；詳見 [`docs/BUILD.md`](docs/BUILD.md) §7 |
 | 啟動驗證 | 已用產出的 JAR 實際啟動、產生世界、正常 `stop`（結束碼 0） |
 
 已在 0.1.0 完成的功能：

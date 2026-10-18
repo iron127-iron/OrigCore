@@ -91,7 +91,7 @@ OrigCore **不是**把 Paper 原始碼複製到獨立專案，而是直接沿用
 | 啟動 | `PaperBootstrap.boot()` | 印出品牌橫幅 → 載入並驗證設定 → 偵測 CPU → 設定 `ThreadSafetyGuard` → `ThreadCoordinator.start()` → 註冊 JVM 關閉掛鉤。 |
 | Tick 進入 | `MinecraftServer.processPacketsAndTick` | `onServerTickStart()`：只記錄奈秒時間戳。 |
 | Tick 結束 | 同上 | `onServerTick()`：排空啟動前暫存的派送工作 → 量測 Tick 耗時 → 視間隔輸出摘要。 |
-| 關閉 | `MinecraftServer.stopServer()` | `onServerStopping()`：停止接受派送 → 停止接受新工作 → 有限時間內讓已開始的工作完成 → 將仍在佇列中的工作標記為拒絕 → 輸出最終統計 → 寫出 `logs/origcore-diagnostics.txt`。 |
+| 關閉 | `MinecraftServer.stopServer()` | `onServerStopping()`：停止接受派送 → 停止接受新工作 → 有限時間內讓已開始的工作完成 → 將仍在佇列中的工作標記為拒絕 → 輸出**唯一一次**完整摘要 → 寫出 `logs/origcore-diagnostics.txt`。 |
 | 備援關閉 | JVM shutdown hook | 若 `stopServer()` 沒跑到，仍會嘗試關閉工作池。 |
 
 ### 失敗安全
