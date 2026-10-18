@@ -160,7 +160,7 @@ cd ..\..\..\..
 # 1) 編譯
 .\gradlew.bat :paper-server:compileJava
 
-# 2) OrigCore 單元測試（47 項，不需要伺服器）
+# 2) OrigCore 單元測試（61 項，不需要伺服器）
 .\gradlew.bat :paper-server:origcoreTest
 
 # 3) 完整檢查（含掃描 jar 中不該被呼叫的 API，以及 Paper 自己的測試）
@@ -277,3 +277,36 @@ OrigCore 0.1.0 **刻意沒有刪除**這些檔案：它們是上游檔案，刪�
 `ver/1.21.11` 時多出無謂的衝突。請在建立 OrigCore 的 GitHub repo 之後，
 用 GitHub 介面（Actions → 選擇 workflow → Disable）或直接在 fork 上刪除來處理，
 並自行決定是否要長期保留上游檔案以利同步。
+
+---
+
+## 8. 建置後自動複製 JAR（可選）
+
+`paper-server` 有一個 OrigCore 專屬任務 `deployBundlerJar`：每次
+`createMojmapBundlerJar` 產出 JAR 之後，自動把該 JAR 複製到指定目錄
+（例如 MCSManager 的實例目錄），省去手動複製。
+
+目標目錄由 Gradle 屬性 `mcsmanagerInstanceDir` 決定，**不會**寫進專案的版控檔案：
+
+| 設定位置 | 適用 |
+| --- | --- |
+| `~/.gradle/gradle.properties`（使用者家目錄） | 只有這台機器生效（建議） |
+| 專案 `gradle.properties` | 會進入版控，不建議放機器路徑 |
+| 命令列 `-PmcsmanagerInstanceDir=...` | 單次覆寫 |
+
+```properties
+# ~/.gradle/gradle.properties
+mcsmanagerInstanceDir=D:/windows/desk/mcsmanager_windows_release/mcsmanager/daemon/data/InstanceData/<實例 ID>
+```
+
+行為：
+
+- 未設定（或空白）：**不複製**，只印出一行說明；CI 與其他開發者不受影響。
+- 已設定但目錄不存在：印出**警告**並略過，建置仍然成功（JAR 本身照常產出）。
+- 已設定且目錄存在：複製並印出 `[OrigCore] Copied <檔名> to <完整路徑> (<位元組數>)`。
+- 檔名**維持原樣**（例如 `origcore-bundler-1.21.11-R0.1-SNAPSHOT-mojmap.jar`），
+  不會改名成 `server.jar`，以免覆蓋你放在同一目錄的其他檔案。
+
+也可以單獨執行：`.\gradlew.bat :paper-server:deployBundlerJar`（會先確保 bundler JAR 已產出）。
+
+> 用 `.properties` 檔案時請用**正斜線**：反斜線在 `.properties` 裡是跳脫字元。

@@ -75,7 +75,7 @@ OrigCore **不是**把 Paper 原始碼複製到獨立專案，而是直接沿用
                         │   ├─ WorkerPool               │ 固定大小 + 有界佇列
                         │   ├─ DefaultWorkScheduler     │ 提交 / 取消 / 統計
                         │   ├─ MainThreadDispatcher     │ 非阻塞派送回主執行緒
-                        │   └─ DiagnosticsReporter      │ 依取樣間隔輸出摘要
+                        │   └─ DiagnosticsReporter      │ 摘要只在關閉時輸出
                         └───────────────────────────────┘
 ```
 
@@ -242,12 +242,20 @@ workerThreads == 0： base = declaredLogicalProcessors   若 > 0
 
 `DiagnosticsReporter`：
 
-- 每 Tick 只做兩件低成本的事：一分鐘內的時間相減，與一次環狀緩衝區寫入（`LatencyWindow`）。
-- 只在取樣間隔到達時才排序並計算百分位數，然後輸出一次摘要。
-- 取樣視窗 `TICK_SAMPLE_WINDOW = 1200`（約 60 秒 @ 20 TPS），避免無上限成長。
+- 每 Tick 只做兩件低成本的事：一次時間相減，與一次環狀緩衝區寫入（`LatencyWindow`）。
+- **0.1.0 不輸出週期性摘要**：不再依固定取樣間隔自動印出摘要，
+  只在伺服器關閉時輸出**唯一一次**完整摘要（外加一行 `OrigCore final stats` 精簡統計）。
+  長時間執行時不會被摘要洗版，關閉時的完整內容也會寫入 `logs/origcore-diagnostics.txt`。
+- 除錯用（**預設關閉**）：JVM 系統屬性 `-Dorigcore.diagnostics.periodic=true` 改成每 60 秒輸出一次，
+  判斷邏輯獨立成可單元測試的 `PeriodicSummaryPolicy`（純函式 `isDue(now, lastReport)`）。
+  其他任何值（含 `false`、無法辨識的字串）都維持「不輸出」，啟動日誌會明確印出實際生效的狀態。
+- 取樣視窗 `TICK_SAMPLE_WINDOW = 1200`（約 60 秒 @ 20 TPS），避免無上限成長；
+  摘要會列出實際樣本數，並說明樣本只涵蓋最近 1200 個 Tick（不是整段執行期間）。
 - 輸出欄位：TPS（1m/5m/15m，來自 `Bukkit#getTPS()`）、MSPT（OrigCore 自量，P50/P95/P99）、
   `Paper avg tick`、主執行緒耗時、工作執行緒數與忙碌數、佇列長度、提交／完成／取消／拒絕／例外／逾時計數、
-  佇列等待與執行耗時百分位數、主執行緒派送統計、執行緒安全違規數。
+  佇列等待與執行耗時百分位數、主執行緒派送統計、執行緒安全違規數、摘要策略（週期摘要開或關）。
+- `metrics.enabled: false` 時不取樣，因此摘要改為明確說明「未收集樣本、TPS/MSPT 不列出」，
+  但仍然輸出精確的工作計數器——不會把「沒量到」印成 0 當成有量到的數字。
 - 摘要中固定附上一行註記：**工作池忙碌率不等於整台機器的 CPU 使用率；TPS 也不是唯一效能指標。**
 
 ### 為什麼 MSPT 有兩個來源
@@ -291,5 +299,7 @@ workerThreads == 0： base = declaredLogicalProcessors   若 > 0
   先建立正確的邊界與可量測的基礎，再考慮放入哪些工作。
 - `physicalCores` 與 `containerQuotaCpus` 在 Windows／macOS 一律為「未知」。
 - 診斷的「主執行緒耗時」與 MSPT 使用同一組樣本，因此兩者的 P50 必然相同。
+- 週期性摘要的除錯路徑（`-Dorigcore.diagnostics.periodic=true`）目前只有單元測試覆蓋，
+  **尚未在實際伺服器上跑過**；實際在伺服器上驗證過的是預設（不輸出週期摘要）路徑。
 - 沒有熱重載設定；修改設定需重新啟動。
 - `region-tick` 為保留設定，無實際作用。

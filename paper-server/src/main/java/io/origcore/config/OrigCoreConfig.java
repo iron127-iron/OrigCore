@@ -41,10 +41,6 @@ public final class OrigCoreConfig {
     /** 使用者可宣告的處理器數量上限（只用於設定驗證，避免不合理的數值）。 */
     public static final int HARD_MAX_DECLARED_PROCESSORS = 4096;
 
-    /** 診斷取樣間隔允許的範圍（秒）。 */
-    public static final int MIN_SAMPLE_INTERVAL_SECONDS = 1;
-    public static final int MAX_SAMPLE_INTERVAL_SECONDS = 3600;
-
     public static final String CONFIG_DIRECTORY = "config";
     public static final String FILE_NAME = "origcore.yml";
 
@@ -64,7 +60,6 @@ public final class OrigCoreConfig {
     private final CompatibilityMode compatibilityMode;
     private final boolean threadChecks;
     private final boolean metricsEnabled;
-    private final int sampleIntervalSeconds;
     private final boolean logWorkerErrors;
     private final boolean logQueueOverflow;
     private final List<String> warnings;
@@ -80,7 +75,6 @@ public final class OrigCoreConfig {
         final CompatibilityMode compatibilityMode,
         final boolean threadChecks,
         final boolean metricsEnabled,
-        final int sampleIntervalSeconds,
         final boolean logWorkerErrors,
         final boolean logQueueOverflow,
         final List<String> warnings
@@ -95,7 +89,6 @@ public final class OrigCoreConfig {
         this.compatibilityMode = compatibilityMode;
         this.threadChecks = threadChecks;
         this.metricsEnabled = metricsEnabled;
-        this.sampleIntervalSeconds = sampleIntervalSeconds;
         this.logWorkerErrors = logWorkerErrors;
         this.logQueueOverflow = logQueueOverflow;
         this.warnings = List.copyOf(warnings);
@@ -148,10 +141,6 @@ public final class OrigCoreConfig {
 
     public boolean metricsEnabled() {
         return this.metricsEnabled;
-    }
-
-    public int sampleIntervalSeconds() {
-        return this.sampleIntervalSeconds;
     }
 
     public boolean logWorkerErrors() {
@@ -221,6 +210,13 @@ public final class OrigCoreConfig {
                 + "worker thread count with threading.worker-threads instead "
                 + "(0 = auto-detect, 1 ~ " + HARD_MAX_WORKER_THREADS + " = fixed).");
         }
+        // 0.1.0 起不再依固定間隔輸出摘要，因此這個鍵已移除。
+        if (yaml.isSet("metrics.sample-interval-seconds")) {
+            warnings.add("metrics.sample-interval-seconds is no longer used and was ignored: OrigCore "
+                + "0.1.0 does NOT print a diagnostics summary on a fixed interval. One full summary is "
+                + "printed when the server shuts down. (Debug only: the JVM system property "
+                + "origcore.diagnostics.periodic=true enables a summary every 60 s.)");
+        }
 
         final boolean threadingEnabled = yaml.getBoolean("threading.enabled", true);
 
@@ -281,12 +277,6 @@ public final class OrigCoreConfig {
 
         final boolean threadChecks = yaml.getBoolean("compatibility.thread-checks", true);
         final boolean metricsEnabled = yaml.getBoolean("metrics.enabled", true);
-        final int sampleIntervalSeconds = requireRange(
-            "metrics.sample-interval-seconds",
-            yaml.getInt("metrics.sample-interval-seconds", 10),
-            MIN_SAMPLE_INTERVAL_SECONDS,
-            MAX_SAMPLE_INTERVAL_SECONDS
-        );
         final boolean logWorkerErrors = yaml.getBoolean("diagnostics.log-worker-errors", true);
         final boolean logQueueOverflow = yaml.getBoolean("diagnostics.log-queue-overflow", true);
 
@@ -307,7 +297,6 @@ public final class OrigCoreConfig {
             compatibilityMode,
             threadChecks,
             metricsEnabled,
-            sampleIntervalSeconds,
             logWorkerErrors,
             logQueueOverflow,
             warnings
@@ -407,7 +396,6 @@ public final class OrigCoreConfig {
         yaml.set("compatibility.thread-checks", true);
 
         yaml.set("metrics.enabled", true);
-        yaml.set("metrics.sample-interval-seconds", 10);
 
         yaml.set("diagnostics.log-worker-errors", true);
         yaml.set("diagnostics.log-queue-overflow", true);
@@ -464,12 +452,14 @@ public final class OrigCoreConfig {
                 "false = 關閉檢查（正式環境可關閉以降低少量開銷）"));
 
         yaml.setComments("metrics",
-            List.of("效能診斷指標。指標不會每 Tick 產生大量日誌，而是依取樣間隔彙整輸出。"));
+            List.of("效能診斷指標。",
+                "★不會依固定間隔輸出摘要★：0.1.0 只在伺服器關閉時輸出一次完整摘要，",
+                "避免長時間執行時持續產生大量日誌（每 Tick 仍只做一次低開銷取樣）。",
+                "除錯用：JVM 參數 -Dorigcore.diagnostics.periodic=true 會改成每 60 秒輸出一次摘要。"));
         yaml.setComments("metrics.enabled",
-            List.of("是否啟用 OrigCore 診斷指標收集。"));
-        yaml.setComments("metrics.sample-interval-seconds",
-            List.of("診斷摘要的輸出間隔（秒）。",
-                "允許範圍 " + MIN_SAMPLE_INTERVAL_SECONDS + " ~ " + MAX_SAMPLE_INTERVAL_SECONDS + "。"));
+            List.of("是否啟用 OrigCore 診斷指標收集（每 Tick 取樣）。",
+                "  true  = 取樣，並在關閉時輸出完整摘要（預設）",
+                "  false = 不取樣，也不輸出摘要；關閉時仍會列出精確的工作計數器"));
 
         yaml.setComments("diagnostics",
             List.of("診斷與日誌相關設定。"));

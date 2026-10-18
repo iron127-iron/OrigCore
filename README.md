@@ -53,7 +53,7 @@ OrigCore 0.1.0 的定位很明確：**以 Paper 為基底，先把「可受控�
 - 核心數設定：`threading.worker-threads` 可填固定值，`0` 代表自動識別；偵測不到時可用 `cpu.*` 明確宣告（標示為 `operator-declared`，不冒稱偵測結果）。
 - 設定檔驗證：範圍檢查、明確錯誤、不沉默接受不合法值；`region-tick.enabled` 強制為 `false`。
 - 診斷指標：TPS、MSPT、主執行緒耗時、工作執行緒數與忙碌數、佇列長度、工作計數、佇列等待與執行耗時百分位數。
-- OrigCore 專屬單元測試（47 項，不需要啟動伺服器）。
+- OrigCore 專屬單元測試（61 項，不需要啟動伺服器）。
 
 ---
 
@@ -147,6 +147,7 @@ paper-server-1.21.11-R0.1-SNAPSHOT.jar
 | 打包（paperclip） | `gradlew createMojmapPaperclipJar` |
 | 完整檢查 | `gradlew check`（含 Paper 上游自己的測試；OrigCore 尚未在 Windows 上驗證此任務，見 `docs/BUILD.md`） |
 | 開發用伺服器 | `gradlew runServer`（或 `runBundler`／`runPaperclip`） |
+| 複製 bundler JAR 到指定目錄 | `gradlew :paper-server:deployBundlerJar`（設 `mcsmanagerInstanceDir` 後，`createMojmapBundlerJar` 之後會自動執行；見 `docs/BUILD.md` 第 8 節） |
 
 ---
 
@@ -219,8 +220,7 @@ workers = max(1, min(min(64, auto-worker-thread-cap), base - 1))   # 保留一�
 
 | 鍵 | 預設 | 允許值 / 範圍 | 說明 |
 | --- | --- | --- | --- |
-| `metrics.enabled` | `true` | `true` / `false` | 是否輸出診斷摘要。指標不會每 Tick 產生大量日誌，而是依取樣間隔彙整。 |
-| `metrics.sample-interval-seconds` | `10` | `1` ~ `3600` | 摘要輸出間隔。 |
+| `metrics.enabled` | `true` | `true` / `false` | 是否收集 Tick 取樣（每 Tick 一次低開銷取樣）。**不會依固定間隔輸出摘要**：伺服器關閉時才輸出一次完整摘要。設 `false` 時不取樣、也不輸出摘要，但關閉時仍會列出精確的工作計數器。 |
 | `diagnostics.log-worker-errors` | `true` | `true` / `false` | 背景工作發生例外時是否記錄完整堆疊。 |
 | `diagnostics.log-queue-overflow` | `true` | `true` / `false` | 佇列滿載（工作被拒絕）時是否記錄。 |
 
@@ -229,6 +229,7 @@ workers = max(1, min(min(64, auto-worker-thread-cap), base - 1))   # 保留一�
 - **不合法或超範圍的值會讓 OrigCore 停用**，並在主控台印出明確錯誤（含設定鍵、目前值、允許範圍／允許值）。
 - 伺服器本身仍會正常啟動，行為等同未修改的 Paper；修正設定後重新啟動即可。
 - 舊開發版本的 `threading.mode` 與 `threading.manual-worker-threads` 已移除；若仍存在會產生明確警告（不會默默忽略）。
+- 舊開發版本的 `metrics.sample-interval-seconds` 也已移除（0.1.0 不再依固定間隔輸出摘要）；若仍存在會產生明確警告。
 - `threading.enabled: false` 會產生警告，並明確說明不會建立背景工作池。
 - 系統屬性 `-Dorigcore.thread-check.mode=off|warn|strict` 可覆寫 `compatibility.thread-checks`。
 
@@ -236,26 +237,46 @@ workers = max(1, min(min(64, auto-worker-thread-cap), base - 1))   # 保留一�
 
 ## 診斷輸出
 
-依 `metrics.sample-interval-seconds` 間隔輸出一次摘要（預設每 10 秒；**不是**每 Tick）：
+**0.1.0 不會依固定間隔輸出摘要。** 整個執行期間只在**伺服器關閉時輸出一次**完整摘要
+（外加一行 `OrigCore final stats` 精簡統計），因此長時間掛機也不會被摘要洗版；
+完整內容（含 CPU 偵測與工作計數）同時寫入 `logs/origcore-diagnostics.txt`。
+
+以下為實際關閉時的輸出（取自 0.1.0 的啟動／關閉煙霧測試，`worker-threads: 0`）：
 
 ```
-===== OrigCore diagnostics summary #2 =====
-  sample interval  : 10.0 s (202 ticks). TPS and average tick time come from the Paper API.
-  TPS 1m/5m/15m    : 19.98 / 19.98 / 19.98
-  MSPT (OrigCore)  : P50 0.42 ms / P95 1.62 ms / P99 10.19 ms (samples 202)
-  Paper avg tick   : 0.43 ms
-  main-thread time : P50 0.42 ms (measured by OrigCore; same samples as MSPT)
-  worker threads   : 8 (busy 0)
-  work queue       : 0 / 1024
-  work counters    : submitted 0, completed 0, cancelled 0, rejected 0, failed 0, timeouts 0
-  queue latency    : P50 0.0 us / P95 0.0 us / P99 0.0 us
-  execution time   : P50 0.0 us / P95 0.0 us / P99 0.0 us
-  main dispatch    : dispatched 0, executed 0, rejected 0, buffered 0
-  safety violations: 0 (mode WARN)
-  NOTE             : worker pool utilisation is NOT machine-wide CPU usage, and TPS is not the only performance metric.
+[OrigCore] OrigCore final stats: uptime about 31 s, 636 ticks, 0 periodic summaries printed, 1 summary written at shutdown.
+[OrigCore] ===== OrigCore final diagnostics summary =====
+[OrigCore]   period           : whole run: about 31 s (636 ticks)
+[OrigCore]   TPS 1m/5m/15m    : 19.99 / 19.99 / 19.99
+[OrigCore]   MSPT (OrigCore)  : P50 0.32 ms / P95 1.01 ms / P99 10.31 ms (samples 636 of at most 1200 ticks)
+[OrigCore]   Paper avg tick   : 0.53 ms
+[OrigCore]   main-thread time : P50 0.32 ms (measured by OrigCore; same samples as MSPT)
+[OrigCore]   worker threads   : 8 (busy 0)
+[OrigCore]   work queue       : 0 / 1024
+[OrigCore]   work counters    : submitted 0, completed 0, cancelled 0, rejected 0, failed 0, timeouts 0
+[OrigCore]   queue latency    : P50 0.0 us / P95 0.0 us / P99 0.0 us
+[OrigCore]   execution time   : P50 0.0 us / P95 0.0 us / P99 0.0 us
+[OrigCore]   main dispatch    : dispatched 0, executed 0, rejected 0, buffered 0, discarded at shutdown 0
+[OrigCore]   safety violations: 0 (mode WARN)
+[OrigCore]   NOTE             : worker pool utilisation is NOT machine-wide CPU usage, and TPS is not the only performance metric.
+[OrigCore]   summary policy   : periodic summaries OFF (0.1.0 default); this shutdown summary is the only summary
 ```
 
-關閉時另外輸出最終統計，並把完整診斷快照寫入 **`logs/origcore-diagnostics.txt`**（回報問題時請附上這個檔案）。
+取樣只保留最近的 1200 個 Tick（約 60 秒 @ 20 TPS），所以 `samples` 指的是被保留的樣本數，
+不是執行期間的總 Tick 數（總 Tick 數在 `period` 那一行）。
+
+### 除錯用：開啟週期性摘要
+
+需要觀察長時間趨勢時，用 JVM 系統屬性明確開啟（**預設關閉**，間隔固定 60 秒）：
+
+```
+java -Dorigcore.diagnostics.periodic=true -jar origcore-bundler-....jar --nogui
+```
+
+開啟後每 60 秒輸出一份摘要（標題會標示 `periodic debug output; NOT the default behaviour`），
+關閉時仍會再輸出一次完整摘要。其他任何值（含 `false`）都維持「不輸出」。
+**注意**：這個除錯路徑目前只有單元測試覆蓋，尚未在實際伺服器上跑過；
+實際驗證過的是預設（關閉）路徑。
 
 ### MSPT 的兩種來源
 
@@ -286,11 +307,13 @@ paper-server/src/main/java/io/origcore/
   util/    LatencyWindow             定長環狀緩衝區與百分位數
 
 paper-server/src/origcoreTest/java/io/origcore/
-  config/OrigCoreConfigTest.java         設定驗證（14 項）
-  cpu/CpuResourceDetectorTest.java       CPU 推導不變條件（6 項）
-  thread/WorkerPoolTest.java             執行緒池與有界佇列語意（6 項）
-  thread/DefaultWorkSchedulerTest.java   提交／取消／拒絕／關閉語意（6 項）
-  util/LatencyWindowTest.java            百分位數計算（6 項）
+  config/OrigCoreConfigTest.java           設定驗證與預設檔（18 項）
+  cpu/CpuResourceDetectorTest.java         CPU 推導不變條件（12 項）
+  metrics/DiagnosticsReporterTest.java     預設不輸出週期摘要、關閉時輸出唯一一次摘要（7 項）
+  metrics/PeriodicSummaryPolicyTest.java   週期摘要原則（預設關閉、時間到才輸出）（6 項）
+  thread/WorkerPoolTest.java               執行緒池與有界佇列語意（6 項）
+  thread/DefaultWorkSchedulerTest.java     提交／取消／拒絕／關閉語意（6 項）
+  util/LatencyWindowTest.java              百分位數計算（6 項）
 
 paper-server/patches/sources/net/minecraft/server/MinecraftServer.java.patch
                                        OrigCore 唯一的 Minecraft 層 patch（3 個 hook）

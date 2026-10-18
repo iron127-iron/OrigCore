@@ -247,6 +247,13 @@ public final class OrigCoreBootstrap {
             sb.append("Worker threads: ").append(coordinator.workerThreads()).append(System.lineSeparator());
             sb.append("Work stats: ").append(coordinator.workMetrics().snapshot()).append(System.lineSeparator());
             sb.append("Main-thread dispatch: ").append(coordinator.dispatcherSnapshot()).append(System.lineSeparator());
+            final String summary = coordinator.finalSummary();
+            if (!summary.isEmpty()) {
+                sb.append(System.lineSeparator());
+                sb.append("Diagnostics summary (the only summary of this run; printed at shutdown)")
+                    .append(System.lineSeparator());
+                sb.append(summary).append(System.lineSeparator());
+            }
         }
         sb.append("Thread safety violations: ").append(ThreadSafetyGuard.violationCount())
             .append(" (mode ").append(ThreadSafetyGuard.mode()).append(')').append(System.lineSeparator());

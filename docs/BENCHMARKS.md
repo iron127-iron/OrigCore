@@ -58,19 +58,24 @@ Remove-Item -Recurse -Force bench-origcore -ErrorAction SilentlyContinue
 
 ### 2.2 取得資料
 
-1. 啟動伺服器，讓世界產生完成（第一份摘要通常是產生期間的資料，**不要**拿來當基準）。
-2. 等 TPS 穩定在 20、且連續數份摘要的 MSPT 波動變小之後再開始記錄。
-3. 對照組請用**同一個世界、同樣的 JVM 參數、同樣的插件**執行未修改的 Paper 1.21.11。
-4. 每組設定至少重跑 3 次，取中位數；並保留全部原始輸出。
-5. 關閉伺服器後保留 `logs/origcore-diagnostics.txt` 作為附件。
+0.1.0 預設**只在關閉時**輸出一份摘要。因此要觀察「長時間的期間變化」，必須自己開啟除錯用的週期摘要：
+
+1. 需要期間資料時，在 JVM 參數加上 `-Dorigcore.diagnostics.periodic=true`
+   （開啟後每 60 秒輸出一次摘要；**預設關閉**，一般玩家不需要它）。
+   只需要最終結果時，直接跳過這個參數即可。
+2. 啟動伺服器並讓世界產生完成（世界產生期間的資料，**不要**拿來當基準）。
+3. 等 TPS 穩定在 20、且 MSPT 波動變小之後再開始記錄。
+4. 對照組請用**同一個世界、同樣的 JVM 參數、同樣的插件**執行未修改的 Paper 1.21.11。
+5. 每組設定至少重跑 3 次，取中位數；並保留全部原始輸出。
+6. 關閉伺服器後保留 `logs/origcore-diagnostics.txt` 作為附件。
 
 原始資料的來源優先順序：
 
 | 來源 | 內容 |
 | --- | --- |
-| `logs/latest.log` | 每次取樣的完整診斷摘要（**日誌順序以這個檔案為準**） |
+| `logs/latest.log` | 關閉時的那一份完整摘要；若加了 `-Dorigcore.diagnostics.periodic=true` 也包含每 60 秒的摘要（**日誌順序以這個檔案為準**） |
 | 主控台輸出 | 同上；但用 `tools/smoke-test.ps1` 擷取時，請注意腳本會自己重導輸出以保證行序 |
-| `logs/origcore-diagnostics.txt` | 關閉時的完整快照（CPU 資訊、工作統計、派送統計） |
+| `logs/origcore-diagnostics.txt` | 關閉時的完整快照（CPU 資訊、工作統計、派送統計，並附上關閉摘要全文） |
 | 既有工具 | Spark、Paper 內建 timings 等（OrigCore 不取代它們） |
 
 ### 2.3 判讀
@@ -121,7 +126,38 @@ worker-threads: 0（自動識別）→ 實際上建立 8 條工作執行緒，�
 
 以上只證明「設定 → 執行緒數」的對應正確，**不代表**任何效能結論。
 
-### 第一次運行（全新產生世界）
+### 0.1.0：關閉時唯一一次摘要（目前的行為）
+
+0.1.0 **不再依固定間隔輸出摘要**，改成在伺服器關閉時輸出唯一一次完整摘要。
+以下是 `tools/smoke-test.ps1` 在同一台機器上的實際輸出節錄
+（全新產生的世界、沒有玩家、沒有插件、`worker-threads: 0` → 8 條工作執行緒）：
+
+```text
+[OrigCore] OrigCore final stats: uptime about 31 s, 636 ticks, 0 periodic summaries printed, 1 summary written at shutdown.
+[OrigCore] ===== OrigCore final diagnostics summary =====
+[OrigCore]   period           : whole run: about 31 s (636 ticks)
+[OrigCore]   TPS 1m/5m/15m    : 19.99 / 19.99 / 19.99
+[OrigCore]   MSPT (OrigCore)  : P50 0.32 ms / P95 1.01 ms / P99 10.31 ms (samples 636 of at most 1200 ticks)
+[OrigCore]   Paper avg tick   : 0.53 ms
+[OrigCore]   main-thread time : P50 0.32 ms (measured by OrigCore; same samples as MSPT)
+[OrigCore]   worker threads   : 8 (busy 0)
+[OrigCore]   work queue       : 0 / 1024
+[OrigCore]   work counters    : submitted 0, completed 0, cancelled 0, rejected 0, failed 0, timeouts 0
+[OrigCore]   queue latency    : P50 0.0 us / P95 0.0 us / P99 0.0 us
+[OrigCore]   execution time   : P50 0.0 us / P95 0.0 us / P99 0.0 us
+[OrigCore]   main dispatch    : dispatched 0, executed 0, rejected 0, buffered 0, discarded at shutdown 0
+[OrigCore]   safety violations: 0 (mode WARN)
+[OrigCore]   NOTE             : worker pool utilisation is NOT machine-wide CPU usage, and TPS is not the only performance metric.
+[OrigCore]   summary policy   : periodic summaries OFF (0.1.0 default); this shutdown summary is the only summary
+```
+
+這是**唯一一次**的摘要，涵蓋的是「整段執行期間最近 1200 個 Tick」
+（`samples 636` 表示這次只跑了 636 個 Tick，全部都被保留）。
+
+### 歷史資料：開發期間的舊版週期摘要（0.1.0 已移除）
+
+以下是 0.1.0 開發期間、**舊版仍會每 10 秒輸出摘要**時的真實記錄，只保留作為
+「世界產生期間 vs. 產生完成後」的對照；這種 `#1/#2/#3/#4` 輸出格式在 0.1.0 已不存在。
 
 | 摘要 | 涵蓋時間 | Ticks | TPS 1m | MSPT P50 | MSPT P95 | MSPT P99 | Paper avg tick |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -130,7 +166,7 @@ worker-threads: 0（自動識別）→ 實際上建立 8 條工作執行緒，�
 | #3 | 10.1 s | 201 | 19.99 | 0.25 ms | 0.46 ms | 0.71 ms | 0.27 ms |
 | #4 | 10.0 s | 201 | 19.99 | 0.17 ms | 0.36 ms | 0.49 ms | 0.30 ms |
 
-同一時間的工作統計：
+同一時間的工作統計（舊格式）：
 
 ```text
 worker threads: 8 (busy 0)
@@ -140,23 +176,13 @@ main dispatch : dispatched 0, executed 0, rejected 0, buffered 0
 safety violations: 0 (mode WARN)
 ```
 
-### 第二次運行（同一個已產生完成的世界，修正輸出格式之後）
-
-在把診斷摘要改為逐行輸出之後重跑同一份驗證，得到同樣的模式：
-
-| 摘要 | 涵蓋時間 | Ticks | TPS 1m | MSPT P50 | MSPT P95 | MSPT P99 | Paper avg tick |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| #2 | 10.0 s | 201 | 20.00 | 0.35 ms | 0.72 ms | 1.18 ms | 0.38 ms |
-| #4 | 10.0 s | 200 | 20.00 | 0.17 ms | 0.30 ms | 0.49 ms | 0.19 ms |
-
-關閉時的最終統計：`uptime about 37 s, 745 ticks, 4 summaries printed`，
-工作計數同樣全部為 0。
+舊版關閉時的最終統計：`uptime about 37 s, 745 ticks, 4 summaries printed`，工作計數同樣全部為 0。
 
 ### 這些數字說明了什麼
 
-1. **摘要 #1 是產生世界期間的資料**（TPS 15.88、MSPT 62 ms），不能當成基準。
-2. 世界產生完成後 TPS 回到 20.00，MSPT P50 降到 0.17–0.42 ms，而 P99 仍有 0.49–10.19 ms——
-   **這正是只看 P50 會看不到的東西**。
+1. **世界產生期間的資料不可當成基準**（TPS 15.88、MSPT 62 ms）；產生完成後
+   TPS 回到 20.00 附近，MSPT P50 降到 0.17–0.42 ms。
+2. **P99 明顯高於 P50**（0.49–10.31 ms）——這正是只看平均值會看不到的東西。
 3. **所有工作計數都是 0。** 這是預期結果，也直接印證了誠實聲明：
    0.1.0 沒有任何原版工作被放到背景執行，所以它對效能的影響應該接近零。
 4. 這些量測**不足以**支持任何效能主張，也不應該被引用為效能證據。
@@ -180,8 +206,8 @@ safety violations: 0 (mode WARN)
 
 | 設定 | 對量測的影響 |
 | --- | --- |
-| `metrics.enabled` | 關閉時不會有摘要輸出（也就沒有資料）。 |
-| `metrics.sample-interval-seconds` | 取樣間隔；太短會讓摘要次數變多。 |
+| `metrics.enabled` | 關閉時不會收集 Tick 取樣（TPS／MSPT 就不會出現在關閉摘要中）。 |
+| `-Dorigcore.diagnostics.periodic=true` | 除錯用（JVM 屬性，預設關閉）：開啟後每 60 秒輸出一次摘要，長時間量測時可觀察期間變化。 |
 | `compatibility.thread-checks` | `true`（`WARN`）比 `false`（`OFF`）多一些執行緒比較成本。 |
 | `diagnostics.log-worker-errors` / `log-queue-overflow` | 只在有例外／拒絕時才有成本。 |
 | `threading.enabled: false` | 可用來量測「與 Paper 完全相同」的情境（不建立背景工作池）。 |

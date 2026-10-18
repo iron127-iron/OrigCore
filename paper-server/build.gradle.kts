@@ -325,6 +325,88 @@ val origCoreTestTask = tasks.register<Test>("origcoreTest") {
 tasks.named("check") {
     dependsOn(origCoreTestTask)
 }
+
+// ---------------------------------------------------------------------------
+// OrigCore start - 建置後自動複製 bundler JAR 到指定目錄
+//
+// 用途：每次產出 mojmap bundler JAR 之後，自動複製一份到伺服器實際執行的目錄
+//       （例如 MCSManager 的實例目錄），省去手動複製。
+//
+// 目標目錄由 Gradle 屬性 mcsmanagerInstanceDir 決定，★不寫死在版控檔案裡★：
+//   - 專案 gradle.properties
+//   - 使用者家目錄的 ~/.gradle/gradle.properties（建議放這裡，只有本機生效）
+//   - 或命令列 -PmcsmanagerInstanceDir=...
+//
+// 未設定時：略過複製，只印一行說明（CI 與其他開發者不受影響）。
+// 已設定但目錄不存在時：印出警告並略過，不讓建置失敗（JAR 本身仍然可用）。
+//
+// 刻意使用獨立的 Task 類別而不是 doLast 閉包：腳本層級的閉包會參考 Gradle
+// 腳本物件，無法被 Gradle 的設定快取序列化（實際踩過這個錯）。
+// ---------------------------------------------------------------------------
+
+/** 把產出的 mojmap bundler JAR 複製到 [instanceDir] 指定的目錄。 */
+abstract class DeployBundlerJarTask : DefaultTask() {
+
+    /** 目標目錄；未設定（或空白）時整個任務直接略過並印出說明。 */
+    @get:Internal
+    abstract val instanceDir: Property<String>
+
+    /** bundler 任務的產出；由 dependsOn 的任務提供。 */
+    @get:Internal
+    abstract val jarFiles: ConfigurableFileCollection
+
+    @TaskAction
+    fun deploy() {
+        val configured = instanceDir.orNull
+        if (configured.isNullOrBlank()) {
+            logger.lifecycle(
+                "[OrigCore] mcsmanagerInstanceDir is not set; the bundler JAR was NOT copied. " +
+                    "Set it (for example in ~/.gradle/gradle.properties) to copy it automatically."
+            )
+            return
+        }
+
+        val jars = jarFiles.files.filter { it.name.endsWith(".jar") }
+        if (jars.size != 1) {
+            logger.warn(
+                "[OrigCore] Expected exactly one bundler JAR but found {} ({}); nothing was copied.",
+                jars.size, jars.map { it.name }
+            )
+            return
+        }
+
+        val jar = jars.single()
+        val destinationDir = File(configured)
+        if (!destinationDir.isDirectory) {
+            logger.warn(
+                "[OrigCore] mcsmanagerInstanceDir does not exist, so {} was NOT copied: {}",
+                jar.name, destinationDir.absolutePath
+            )
+            return
+        }
+
+        val destination = File(destinationDir, jar.name)
+        jar.copyTo(destination, overwrite = true)
+        logger.lifecycle(
+            "[OrigCore] Copied {} to {} ({} bytes).",
+            jar.name, destination.absolutePath, destination.length()
+        )
+    }
+}
+
+val deployBundlerJarTask = tasks.register<DeployBundlerJarTask>("deployBundlerJar") {
+    group = "origcore"
+    description = "把 mojmap bundler JAR 複製到 mcsmanagerInstanceDir 指定的目錄（未設定則略過）。"
+    instanceDir.set(providers.gradleProperty("mcsmanagerInstanceDir"))
+    val bundlerJarTask = tasks.named("createMojmapBundlerJar")
+    dependsOn(bundlerJarTask)
+    jarFiles.from(bundlerJarTask)
+}
+
+// 每次產出 bundler JAR 之後自動複製；目標未設定時會自行略過。
+tasks.named("createMojmapBundlerJar") {
+    finalizedBy(deployBundlerJarTask)
+}
 // OrigCore end
 
 val generatedDir: java.nio.file.Path = layout.projectDirectory.dir("src/generated/java").asFile.toPath()

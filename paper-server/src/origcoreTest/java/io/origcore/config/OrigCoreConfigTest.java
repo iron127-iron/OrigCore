@@ -53,7 +53,6 @@ class OrigCoreConfigTest {
         assertEquals(OrigCoreConfig.CompatibilityMode.PAPER, config.compatibilityMode());
         assertTrue(config.threadChecksEnabled());
         assertTrue(config.metricsEnabled());
-        assertEquals(10, config.sampleIntervalSeconds());
         assertTrue(config.logWorkerErrors());
         assertTrue(config.logQueueOverflow());
         assertTrue(config.createsWorkerPool());
@@ -182,11 +181,28 @@ class OrigCoreConfigTest {
     }
 
     @Test
-    void sampleIntervalOutsideTheRangeIsRejected() {
-        assertThrows(OrigCoreConfigException.class, () ->
-            load("metrics:\n  sample-interval-seconds: 0\n"));
-        assertThrows(OrigCoreConfigException.class, () ->
-            load("metrics:\n  sample-interval-seconds: " + (OrigCoreConfig.MAX_SAMPLE_INTERVAL_SECONDS + 1) + "\n"));
+    void legacySampleIntervalKeyIsReportedInsteadOfSilentlyIgnored() throws Exception {
+        final OrigCoreConfig.LoadResult result = loadResult("""
+            metrics:
+              enabled: true
+              sample-interval-seconds: 5
+            """);
+
+        assertTrue(
+            result.warnings().stream().anyMatch(w -> w.contains("metrics.sample-interval-seconds")),
+            "已移除的取樣間隔鍵必須明確告知，不能默默忽略：" + result.warnings()
+        );
+        assertTrue(result.config().metricsEnabled(), "其他 metrics 設定仍必須正常生效");
+    }
+
+    @Test
+    void generatedDefaultsDoNotContainTheRemovedSampleIntervalKey() throws Exception {
+        OrigCoreConfig.load(configFile());
+
+        final String text = Files.readString(configFile().toPath(), StandardCharsets.UTF_8);
+        assertFalse(text.contains("sample-interval-seconds"),
+            "預設檔不得再產生已移除的取樣間隔鍵");
+        assertTrue(text.contains("不會依固定間隔輸出摘要"), "必須說明新的摘要輸出策略");
     }
 
     @Test
