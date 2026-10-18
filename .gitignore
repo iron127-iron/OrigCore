@@ -53,4 +53,7 @@ test-plugin.settings.gradle.kts
 paper-generator.settings.gradle.kts
 
 # Don't track patched vanilla submodules
-paper-server/src/minecraft/
+# OrigCore - ★注意★ 這個規則必須用 **/（規則含斜線時會錨定在 .gitignore 所在目錄，
+# 寫成 paper-server/src/minecraft/ 的話，搬到 versions/<版本>/ 底下就失效，
+# 會把 paperweight 產生的巢狀 repo 當成 gitlink 加進來）。
+**/paper-server/src/minecraft/

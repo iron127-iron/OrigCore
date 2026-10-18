@@ -339,6 +339,7 @@ tasks.named("check") {
 //
 // 未設定時：略過複製，只印一行說明（CI 與其他開發者不受影響）。
 // 已設定但目錄不存在時：印出警告並略過，不讓建置失敗（JAR 本身仍然可用）。
+// 已設定但目標檔案被執行中的伺服器鎖住時：重試後印出警告並略過，同樣不讓建置失敗。
 //
 // 刻意使用獨立的 Task 類別而不是 doLast 閉包：腳本層級的閉包會參考 Gradle
 // 腳本物件，無法被 Gradle 的設定快取序列化（實際踩過這個錯）。
@@ -386,10 +387,38 @@ abstract class DeployBundlerJarTask : DefaultTask() {
         }
 
         val destination = File(destinationDir, jar.name)
-        jar.copyTo(destination, overwrite = true)
-        logger.lifecycle(
-            "[OrigCore] Copied {} to {} ({} bytes).",
-            jar.name, destination.absolutePath, destination.length()
+
+        // 目標檔案可能正被執行中的伺服器鎖住（例如 MCSManager 正在跑這個 JAR），
+        // 這時候 Windows 不允許覆蓋。重試幾次，仍然失敗就只印警告，不讓建置失敗
+        // ——JAR 本身已經建好，能不能複製與建置成功與否無關。
+        val attempts = 3
+        var lastError: Exception? = null
+        for (attempt in 1..attempts) {
+            try {
+                jar.copyTo(destination, overwrite = true)
+                logger.lifecycle(
+                    "[OrigCore] Copied {} to {} ({} bytes).",
+                    jar.name, destination.absolutePath, destination.length()
+                )
+                return
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < attempts) {
+                    Thread.sleep(500L * attempt)
+                }
+            }
+        }
+
+        logger.warn(
+            "[OrigCore] Could not copy {} to {} after {} attempts: {}",
+            jar.name, destination.absolutePath, attempts, lastError?.message
+        )
+        logger.warn(
+            "[OrigCore] The destination file is most likely locked by a running server " +
+                "(for example an MCSManager instance that is using this JAR). The build continues and the " +
+                "newly built JAR is still available in {}. Stop the server and run " +
+                ":paper-server:deployBundlerJar again to copy it.",
+            jar.parentFile.absolutePath
         )
     }
 }
