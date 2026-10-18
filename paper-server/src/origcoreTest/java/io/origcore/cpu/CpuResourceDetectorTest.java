@@ -23,8 +23,22 @@ class CpuResourceDetectorTest {
         final int declaredPhysicalCores
     ) {
         return CpuResourceDetector.detect(new CpuResourceDetector.Request(
-            workerThreads, HARD_MAX, AUTO_CAP, declaredLogicalProcessors, declaredPhysicalCores
+            true, workerThreads, HARD_MAX, AUTO_CAP, declaredLogicalProcessors, declaredPhysicalCores
         ));
+    }
+
+    @Test
+    void aDisabledWorkerPoolReportsZeroThreadsAndSaysSo() {
+        final CpuResourceInfo info = CpuResourceDetector.detect(new CpuResourceDetector.Request(
+            false, 4, HARD_MAX, AUTO_CAP, 0, 0
+        ));
+
+        assertEquals(0, info.effectiveWorkerThreads(),
+            "不建立工作池時不得回報任何工作執行緒數，否則診斷輸出會與實際狀況不符");
+        assertTrue(
+            info.notes().stream().anyMatch(note -> note.contains("threading.enabled=false")),
+            "必須說明工作池已停用：" + info.notes()
+        );
     }
 
     @Test

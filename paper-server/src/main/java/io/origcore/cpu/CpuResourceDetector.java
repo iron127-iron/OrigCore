@@ -41,6 +41,7 @@ public final class CpuResourceDetector {
      * <p>一律由 {@code OrigCoreConfig} 提供，讓「設定值 → 實際執行緒數」的推導
      * 只存在於本類別一個地方。</p>
      *
+     * @param workerPoolEnabled         是否會建立背景工作池（{@code threading.enabled}）
      * @param workerThreads             設定的工作執行緒數；0 表示自動識別
      * @param hardMaxWorkerThreads      工作執行緒數硬性上限
      * @param autoWorkerThreadCap       自動識別時的工作執行緒數上限
@@ -48,6 +49,7 @@ public final class CpuResourceDetector {
      * @param declaredPhysicalCores     使用者宣告的實體核心數；0 表示自動識別
      */
     public record Request(
+        boolean workerPoolEnabled,
         int workerThreads,
         int hardMaxWorkerThreads,
         int autoWorkerThreadCap,
@@ -72,12 +74,14 @@ public final class CpuResourceDetector {
 
         noteDeclaredValues(request, osLogical, physicalCores, jvmAvailable, notes);
 
-        final int effectiveWorkerThreads = computeEffectiveWorkerThreads(
-            request,
-            jvmAvailable,
-            containerQuota,
-            notes
-        );
+        if (!request.workerPoolEnabled()) {
+            notes.add("threading.enabled=false: no background worker pool is created, so the worker "
+                + "thread count is 0. Branding, config validation and diagnostics remain active.");
+        }
+
+        final int effectiveWorkerThreads = request.workerPoolEnabled()
+            ? computeEffectiveWorkerThreads(request, jvmAvailable, containerQuota, notes)
+            : 0;
 
         return new CpuResourceInfo(
             osLogical,

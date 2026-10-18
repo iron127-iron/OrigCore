@@ -102,7 +102,7 @@ worker-threads: 0（自動識別）→ 實際上建立 8 條工作執行緒，�
 
 ### 核心數設定的啟動驗證（不是效能量測）
 
-三種設定都以 `tools/smoke-test.ps1` 實際啟動驗證過（`exit code 0`、`StoppedCleanly=True`），
+四種設定都以 `tools/smoke-test.ps1` 實際啟動驗證過（`exit code 0`、`StoppedCleanly=True`），
 以下是啟動日誌的原文節錄：
 
 | 設定 | 啟動日誌（節錄） | 實際執行緒數 |
@@ -110,6 +110,7 @@ worker-threads: 0（自動識別）→ 實際上建立 8 條工作執行緒，�
 | `worker-threads: 0` | `worker-threads=0 (auto): derived 8 worker thread(s) from the JVM available processor count 20 with an auto cap of 8.` | 8 |
 | `worker-threads: 0` + `cpu.logical-processors: 6` | `derived 5 worker thread(s) from cpu.logical-processors=6 (declared by the operator) with an auto cap of 8.` | 5 |
 | `worker-threads: 3` | `threading.worker-threads=3 was set to a fixed value; CPU detection is NOT consulted for the thread count.` | 3 |
+| `threading.enabled: false` | `threading.enabled=false: no background worker pool is created, so the worker thread count is 0.` | 0（不建立工作池） |
 
 同一批驗證也確認 `cpu.physical-cores: 12` 只出現在診斷輸出：
 

@@ -82,6 +82,7 @@ public final class OrigCoreBootstrap {
         try {
             final CpuResourceInfo cpuInfo = CpuResourceDetector.detect(
                 new CpuResourceDetector.Request(
+                    config.threadingEnabled(),
                     config.requestedWorkerThreads(),
                     OrigCoreConfig.HARD_MAX_WORKER_THREADS,
                     config.autoWorkerThreadCap(),
