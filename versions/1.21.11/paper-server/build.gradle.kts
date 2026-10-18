@@ -225,7 +225,9 @@ tasks.jar {
             "OrigCore-Version" to origCoreVersion,
             "OrigCore-Upstream" to "PaperMC/Paper",
             "OrigCore-Upstream-Branch" to "ver/1.21.11",
-            "OrigCore-Upstream-Commit" to gitHash,
+            // 這裡是實際被 fork 的 Paper 上游 commit，不是本 repo 的 commit
+            // （本 repo 的 commit 由下面的 Git-Commit 記錄）。
+            "OrigCore-Upstream-Commit" to "c5eb0790f199da6c38d0a650e1e5cd5415b28185",
             // Brand-Id 改為 OrigCore，但 ServerBuildInfoImpl#isBrandCompatible
             // 仍然接受 Paper 的品牌識別，以維持插件相容性。
             "Brand-Id" to "origcore:origcore",

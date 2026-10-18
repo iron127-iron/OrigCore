@@ -2,19 +2,24 @@
 
 本文件說明如何從原始碼建置 OrigCore 0.1.0，以及如何安全地修改核心程式碼。
 
+OrigCore 採用 **一個 Minecraft 版本一個資料夾** 的結構。**所有建置指令都要先進入
+你要建置的版本資料夾**（例如 `cd versions\26.2`）。每個資料夾都是一個獨立的
+Paperweight 專案，互不影響。版本對照表見 [`../versions/README.md`](../versions/README.md)。
+
 ---
 
 ## 1. 環境需求
 
 | 項目 | 需求 |
 | --- | --- |
-| JDK | **21**（Paper 的 `options.release = 21`；Gradle toolchain 會處理） |
-| Gradle | 不需要另外安裝，使用專案內的 Gradle Wrapper（9.2.0） |
-| 記憶體 | 建議至少 6 GB 給 Gradle |
-| 網路 | 首次建置需下載 Mache mappings、Spigot build data、Paperclip 等 |
+| 專案目錄 | **`versions/<版本>/`**（例如 `versions/26.2`）；指令都必須在該目錄內執行 |
+| JDK | `1.21.11` → **21**；`26.1`／`26.2`／`26.3` → **25**（對應各版本 `options.release`；Gradle toolchain 會處理） |
+| Gradle | 不需要另外安裝，使用各版本資料夾內的 Gradle Wrapper（1.21.11 → 9.2.0；26.1／26.2 → 9.4.1；26.3 → 9.8.0） |
+| 記憶體 | 建議至少 6 GB 給 Gradle（每個版本的建置各自需要） |
+| 網路 | 首次建置需下載 Mache（含反編譯原始碼）、Minecraft 伺服器 JAR、Paperclip 等 |
 | 作業系統 | Windows / Linux / macOS |
 
-已驗證的環境：
+已驗證的環境（`versions/1.21.11`）：
 
 ```
 Windows 11
@@ -24,7 +29,8 @@ Git 2.54.0.windows.1
 20 logical processors / ~31.7 GB RAM
 ```
 
-> 編譯目標固定是 **Java 21**，不要改成 25。`runServer` 之類的執行任務會另外要求 JetBrains Runtime 21。
+> 1.21.11 的編譯目標固定是 **Java 21**，26.x 是 **Java 25**，不要任意調整。
+> `runServer` 之類的執行任務會另外要求 JetBrains Runtime。
 
 ### Windows 前置設定
 
@@ -39,6 +45,9 @@ git config --global core.longpaths true
 ## 2. 第一次建置
 
 ```powershell
+# 先進入版本資料夾（每個版本都要各自做一次）
+cd versions\26.2                 # 或 versions\1.21.11
+
 # 建議：避免組態快取／背景常駐造成的資源競爭
 $env:GRADLE_OPTS = "-Xmx6g -XX:MaxMetaspaceSize=1g"
 
@@ -52,25 +61,38 @@ $env:GRADLE_OPTS = "-Xmx6g -XX:MaxMetaspaceSize=1g"
 .\gradlew.bat :paper-server:origcoreTest
 
 # 4) 產出伺服器 JAR
-.\gradlew.bat createMojmapBundlerJar createMojmapPaperclipJar
+.\gradlew.bat createBundlerJar createPaperclipJar
 ```
 
 Linux / macOS 請把 `.\gradlew.bat` 改成 `./gradlew`。
 
+> **任務名稱依版本而異**（因為 Paperweight 版本不同）：
+> - `versions/1.21.11`（Paperweight 2.0.0-beta.19）：`createMojmapBundlerJar`／`createMojmapPaperclipJar`。
+> - `versions/26.1`、`26.2`（beta.21）、`26.3`（beta.24）：`createBundlerJar`／`createPaperclipJar`。
+>   這幾版上游已不再產生 `createMojmap*`／`createReobf*` 變體，bundler 本身就是 mojmap 命名空間。
+
 ### 產出物
 
+產物位於**該版本資料夾**的 `paper-server/build/libs/`：
+
 ```
+# versions/1.21.11
 paper-server/build/libs/origcore-bundler-1.21.11-R0.1-SNAPSHOT-mojmap.jar     <- 可獨立啟動
 paper-server/build/libs/origcore-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar   <- 可獨立啟動
 paper-server/build/libs/paper-server-1.21.11-R0.1-SNAPSHOT.jar                <- 不可獨立啟動
+
+# versions/26.2（26.1／26.3 同理，只有版本號不同）
+paper-server/build/libs/origcore-bundler-26.2.local-SNAPSHOT.jar              <- 可獨立啟動
+paper-server/build/libs/origcore-paperclip-26.2.local-SNAPSHOT.jar            <- 可獨立啟動
 ```
 
 - **bundler**：內含伺服器與所需函式庫，直接 `java -jar` 即可。
 - **paperclip**：啟動時視需要下載函式庫，檔案較小。
 - 兩者都會顯示 `[bootstrap] Loading OrigCore ...`。
 
-> **一定要用 `-mojmap` 變體。** 上游刻意停用了 `reobf` 變體的產生，`createReobfBundlerJar` /
-> `createReobfPaperclipJar` 會失敗，這是預期行為，不是你的環境有問題。
+> **1.21.11 一定要用 `-mojmap` 變體。** 上游刻意停用了 `reobf` 變體的產生，
+> `createReobfBundlerJar` / `createReobfPaperclipJar` 會失敗，這是預期行為，不是你的環境有問題。
+> 26.x 沒有 mojmap／reobf 的區分。
 
 ---
 
@@ -201,7 +223,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 | `File name too long` / 路徑過長錯誤（Windows） | 執行 `git config --global core.longpaths true` 後重新建置。 |
 | `Unable to create ... .git/index.lock` | 先前的 git 操作中斷。確認沒有其他 git 行程在跑，刪除該檔案後重試。 |
 | `rebuildPatches` 或 `fixupSourcePatches` 衝突 | 見 §3.4 的復原流程。 |
-| 找不到 `createReobf*` 的產出 | 這是預期行為，上游已停用 reobf 變體。請用 `-mojmap` 變體。 |
+| 找不到 `createReobf*` 的產出 | `versions/1.21.11` 的預期行為，上游已停用 reobf 變體；請用 `-mojmap` 變體。`versions/26.x` 沒有這些任務。 |
+| `Task with name 'createMojmapBundlerJar' not found` | 你跑的是 26.x 版本。Paperweight 2.0.0-beta.21 之後只註冊 `createBundlerJar`／`createPaperclipJar`。 |
+| 在 `versions/<版本>` 內建置時說找不到 `.git` | 本結構的 git 工作區在母 repo 根目錄；各版本 `settings.gradle.kts` 已放寬檢查（接受 `../.git`、`../../.git`）。若你把資料夾搬離母 repo，請在該層 `git init`。 |
 | 第一次建置很慢 | 需要下載 mappings 並反編譯整個 Minecraft；後續建置會使用快取。 |
 | 建置記憶體不足 | 設定 `GRADLE_OPTS="-Xmx6g -XX:MaxMetaspaceSize=1g"`。 |
 | `runServer` 找不到 JDK | 該任務要求 JetBrains Runtime 21，會由 Gradle toolchain 自動 provision。 |
@@ -226,17 +250,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\smoke-test.ps1 `
 OrigCore 自己的遠端：`origin` → <https://github.com/iron127-iron/OrigCore>
 （`upstream` 仍然指向 `PaperMC/Paper`，只用來同步上游，**不要 push 到 upstream**）。
 
-CI 位於 `.github/workflows/build.yml`，執行內容：
+CI 位於 `.github/workflows/build.yml`，以 **版本矩陣** 對每個 `versions/<版本>/`
+資料夾各跑一次（`fail-fast: false`，單一版本失敗不會停掉其他版本）：
 
 1. `applyPatches`
 2. `:paper-server:compileJava`
 3. `:paper-server:origcoreTest`（並上傳測試結果 XML）
-4. `rebuildPatches` 後檢查 `git diff -- paper-server/patches` 必須為空
-   （確認 patch 堆疊是可重現的）
-5. `createMojmapBundlerJar` + `createMojmapPaperclipJar`（並上傳產出）
+4. `rebuildPatches` 後檢查 `git diff --exit-code -- versions/<版本>/paper-server/patches`
+   必須為空（確認 patch 堆疊是可重現的）
+5. 打包 `createBundlerJar` + `createPaperclipJar`（1.21.11 為 `createMojmap*` 變體；並上傳產出）
 
-CI 只建置 Minecraft 1.21.11，**不建立多版本矩陣**，也**不執行 `gradlew check`**
-（Paper 自己的測試任務會啟動測試用伺服器，不適合放在這個流程裡）。
+矩陣內容：`1.21.11` 用 JDK 21，`26.1`／`26.2`／`26.3` 用 JDK 25；Gradle 由各版本
+資料夾內自己的 wrapper 提供（9.2.0 / 9.4.1 / 9.4.1 / 9.8.0）。
+
+CI **不執行 `gradlew check`**（Paper 自己的測試任務會啟動測試用伺服器，不適合放在
+這個流程裡）。
 
 ### CI 的實際狀態（誠實聲明，2026-10-18 更新）
 
@@ -302,7 +330,10 @@ OrigCore 0.1.0 **刻意沒有刪除**這些檔案：它們是上游檔案，刪�
 `createMojmapBundlerJar` 產出 JAR 之後，自動把該 JAR 複製到指定目錄
 （例如 MCSManager 的實例目錄），省去手動複製。
 
-目標目錄由 Gradle 屬性 `mcsmanagerInstanceDir` 決定，**不會**寫進專案的版控檔案：
+目標目錄由 Gradle 屬性決定，**不會**寫進專案的版控檔案。查詢順序為：
+
+1. `mcsmanagerInstanceDir.<版本資料夾名稱>`（該版本專屬，例如 `mcsmanagerInstanceDir.26.2`）
+2. `mcsmanagerInstanceDir`（所有版本共用；`versions/1.21.11` 沿用這一個）
 
 | 設定位置 | 適用 |
 | --- | --- |
@@ -312,7 +343,10 @@ OrigCore 0.1.0 **刻意沒有刪除**這些檔案：它們是上游檔案，刪�
 
 ```properties
 # ~/.gradle/gradle.properties
-mcsmanagerInstanceDir=D:/windows/desk/mcsmanager_windows_release/mcsmanager/daemon/data/InstanceData/<實例 ID>
+# 1.21.11（沿用原本的屬性名）
+mcsmanagerInstanceDir=D:/windows/desk/mcsmanager_windows_release/mcsmanager/daemon/data/InstanceData/<1.21.11 實例 ID>
+# 其他版本各自指定；沒設定就只印一行說明並略過
+mcsmanagerInstanceDir.26.2=D:/.../<26.2 實例 ID>
 ```
 
 行為：

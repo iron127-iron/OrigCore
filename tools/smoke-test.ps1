@@ -88,7 +88,7 @@ $batFile = Join-Path $RunDir 'start-server.bat'
 $batContent = @(
     '@echo off',
     'rem OrigCore smoke-test: let cmd redirect stdout and stderr to one file (single writer).',
-    "java -Xms512M -Xmx${MaxHeapMB}M -jar `"$Jar`" --nogui 1> `"$logFile`" 2>&1",
+    "java -Dterminal.jline=false -Dterminal.ansi=false -Xms512M -Xmx${MaxHeapMB}M -jar `"$Jar`" --nogui 1> `"$logFile`" 2>&1",
     'exit /b %ERRORLEVEL%'
 ) -join "`r`n"
 Write-TextNoBom $batFile $batContent
@@ -114,8 +114,9 @@ $stoppedCleanly = $false
 if (-not $NoStop) {
     if (-not $proc.HasExited) {
         Write-Host "送出 stop 指令..."
-        $proc.StandardInput.WriteLine('stop')
-        $proc.StandardInput.Flush()
+        $bytes = [System.Text.Encoding]::ASCII.GetBytes("stop`r`n")
+        $proc.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        $proc.StandardInput.BaseStream.Flush()
     }
     if ($proc.WaitForExit($ExitWaitSeconds * 1000)) {
         $stoppedCleanly = $true

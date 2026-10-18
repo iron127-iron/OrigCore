@@ -1,15 +1,20 @@
 # OrigCore CI
 #
-# 只建置 Minecraft 1.21.11，刻意不建立多版本矩陣。
+# 這是 OrigCore 母 repo 的 CI。每個 Minecraft 版本資料夾（versions/<版本>/）
+# 都是一個獨立的 Paperweight 專案，因此以「版本矩陣」各跑一次，互不影響。
 #
-# 流程：
-#   1. applyPatches          - 從 patch 堆疊還原 Minecraft 原始碼
-#   2. compileJava           - 編譯
-#   3. origcoreTest          - OrigCore 專屬單元測試（不需要啟動伺服器）
-#   4. rebuildPatches + diff - 確認 patch 堆疊是可重現的
-#   5. createMojmap*Jar      - 產出可用的伺服器 JAR
+# 每個版本的流程：
+#   1. applyPatches            - 從 patch 堆疊還原 Minecraft 原始碼
+#   2. compileJava             - 編譯
+#   3. origcoreTest            - OrigCore 專屬單元測試（不需要啟動伺服器）
+#   4. rebuildPatches + diff   - 確認 patch 堆疊是可重現的
+#   5. 打包 bundler/paperclip  - 產出可用的伺服器 JAR
 #
-# 注意：一定要用 mojmap 變體；上游已刻意停用 reobf 變體的產生。
+# 注意：
+#   * 1.21.11 用的是 -mojmap 變體（該版 Paperweight 仍有 mojmap/reobf 之分，
+#     而上游已停用 reobf 變體）；26.x 只有 createBundlerJar／createPaperclipJar。
+#   * 刻意不執行 `gradlew check`：Paper 上游自己的測試任務會啟動測試用伺服器，
+#     不適合放在這個流程裡。
 
 name: Build OrigCore
 
@@ -32,12 +37,44 @@ concurrency:
 
 jobs:
   build:
-    name: Build (Minecraft 1.21.11)
+    name: Build (Minecraft ${{ matrix.mcVersion }})
+
     runs-on: ubuntu-latest
+
+    strategy:
+      # 一個版本失敗不代表其他版本也要停掉。
+      fail-fast: false
+      matrix:
+        include:
+          - folder: 1.21.11
+            mcVersion: 1.21.11
+            java: '21'
+            bundlerTask: createMojmapBundlerJar
+            paperclipTask: createMojmapPaperclipJar
+          - folder: 26.1
+            mcVersion: 26.1.2
+            java: '25'
+            bundlerTask: createBundlerJar
+            paperclipTask: createPaperclipJar
+          - folder: 26.2
+            mcVersion: 26.2
+            java: '25'
+            bundlerTask: createBundlerJar
+            paperclipTask: createPaperclipJar
+          - folder: 26.3
+            mcVersion: 26.3
+            java: '25'
+            bundlerTask: createBundlerJar
+            paperclipTask: createPaperclipJar
 
     env:
       # 反編譯與編譯整份 Minecraft 相當吃記憶體。
       GRADLE_OPTS: "-Xmx6g -XX:MaxMetaspaceSize=1g"
+
+    defaults:
+      run:
+        # 所有 Gradle 指令都必須在該版本的資料夾內執行。
+        working-directory: versions/${{ matrix.folder }}
 
     steps:
       - name: Checkout
@@ -45,16 +82,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 21
+      - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Configure git
+        working-directory: ${{ github.workspace }}
         run: |
           git config --global user.email "ci@origcore.invalid"
           git config --global user.name "OrigCore CI"
@@ -73,26 +111,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: origcore-test-results
-          path: paper-server/build/test-results/origcoreTest/*.xml
+          name: origcore-test-results-${{ matrix.folder }}
+          path: versions/${{ matrix.folder }}/paper-server/build/test-results/origcoreTest/*.xml
           if-no-files-found: warn
 
       - name: Verify the patch stack is reproducible
         run: |
           ./gradlew rebuildPatches --stacktrace
-          if ! git diff --exit-code -- paper-server/patches; then
-            echo "::error::rebuildPatches changed paper-server/patches; the patch stack is not reproducible."
+          if ! git diff --exit-code -- versions/${{ matrix.folder }}/paper-server/patches; then
+            echo "::error::rebuildPatches changed versions/${{ matrix.folder }}/paper-server/patches; the patch stack is not reproducible."
             exit 1
           fi
 
       - name: Build server jars
-        run: ./gradlew createMojmapBundlerJar createMojmapPaperclipJar --stacktrace
+        run: ./gradlew ${{ matrix.bundlerTask }} ${{ matrix.paperclipTask }} --stacktrace
 
       - name: Upload server jars
         uses: actions/upload-artifact@v4
         with:
-          name: origcore-jars
-          path: |
-            paper-server/build/libs/origcore-bundler-*-mojmap.jar
-            paper-server/build/libs/origcore-paperclip-*-mojmap.jar
+          name: origcore-jars-${{ matrix.folder }}
+          path: versions/${{ matrix.folder }}/paper-server/build/libs/origcore-*.jar
           if-no-files-found: error

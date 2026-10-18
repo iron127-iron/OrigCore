@@ -1,6 +1,11 @@
 # OrigCore
 
-OrigCore 是以 [PaperMC/Paper](https://github.com/PaperMC/Paper) 為基底、針對 **Minecraft 1.21.11** 維護的伺服器核心。
+OrigCore 是以 [PaperMC/Paper](https://github.com/PaperMC/Paper) 為基底的 Minecraft 伺服器核心。
+
+專案採用 **一個 Minecraft 版本一個資料夾** 的結構：每個版本都是 `versions/<版本>/`
+底下一個完整、可獨立建置的 Paperweight 專案，彼此互不影響。
+目前提供 `1.21.11`、`26.1`（實際建置 26.1.2）、`26.2`、`26.3`。
+對照表與建置狀態見 [`versions/README.md`](versions/README.md)。
 
 OrigCore 0.1.0 的定位很明確：**以 Paper 為基底，先把「可受控的背景工作排程」與「執行緒安全邊界」做正確、做誠實**，
 而不是先做一個聽起來很厲害但沒有實測數據的平行化核心。
@@ -67,7 +72,7 @@ OrigCore 0.1.0 **刻意**沒做以下事情。這些不是「還沒做完」，�
 | 區域化 Tick / 平行世界 Tick | **未實作** | `threading.region-tick.enabled` 是保留設定，強制 `false`。設為 `true` 只會得到警告，不會有任何效果。 |
 | 把原版（vanilla）工作卸載到背景 | **未實作** | 0.1.0 的工作池是給「未來可安全分離的純計算工作」用的骨架；**目前沒有任何原版 Tick 工作被移到背景執行**。因此與未修改的 Paper 相比，0.1.0 應視為效能中立。 |
 | 因核心數多而自動加速 | **不主張** | 20 核心的機器不會自動變成 20 倍。工作執行緒數只是 OrigCore 自己管理的背景執行緒數量。 |
-| 多版本支援 | **不支援** | 只維護 1.21.11。跨版本的用戶端連線請自行以 ViaVersion／ViaBackwards 之類的外部方案處理；OrigCore 不對其結果負責。 |
+| 多版本「同時執行」／跨版本 | **不支援** | OrigCore 提供多個**各自獨立建置**的版本資料夾（`versions/1.21.11`、`versions/26.1`、`versions/26.2`、`versions/26.3`），但**不**在同一個 JAR 內同時支援多個 Minecraft 版本，也不處理跨版本的用戶端連線（請自行使用 ViaVersion／ViaBackwards 之類的外部方案，OrigCore 不對其結果負責）。 |
 | Folia 式架構 | **未移植** | Folia 僅作為架構研究參考。OrigCore 沒有整套移植 Folia。 |
 | 熱重載設定 | **不支援** | 修改 `config/origcore.yml` 後需重新啟動。 |
 
@@ -86,9 +91,11 @@ OrigCore 0.1.0 **刻意**沒做以下事情。這些不是「還沒做完」，�
 
 ### 建置
 
-- JDK 21（Paper 的 `options.release = 21`）。
+- **Java 版本依 Minecraft 版本而定：**
+  - `versions/1.21.11`：JDK 21（Paper 的 `options.release = 21`）。
+  - `versions/26.1`、`versions/26.2`、`versions/26.3`：JDK 25（`options.release = 25`）。
   - Gradle toolchain 會自行尋找或用 provision 取得符合的 JDK。
-  - 已驗證環境：Temurin JDK 25.0.4 作為 Gradle 執行 JVM，編譯目標仍為 Java 21。
+  - 已驗證環境：Temurin JDK 25.0.4 同時作為 Gradle 執行 JVM 與 26.x 的編譯 JDK。
 - Windows、Linux、macOS 皆可。Windows 上請先執行：
 
   ```powershell
@@ -98,7 +105,8 @@ OrigCore 0.1.0 **刻意**沒做以下事情。這些不是「還沒做完」，�
   （反編譯產生的路徑會超過 Windows 預設的 260 字元上限。）
 
 - 記憶體：建議至少 6 GB 給 Gradle（範例：`GRADLE_OPTS="-Xmx6g -XX:MaxMetaspaceSize=1g"`）。
-- 需要網路：首次建置會下載 Mache mappings、Spigot build data、Paperclip 與相關依賴。
+- 需要網路：首次建置會下載 Mache（含反編譯原始碼）、Minecraft 伺服器 JAR、Paperclip 與相關依賴。
+- 建議一次只建置 1～2 個版本；每個版本的 Gradle 建置都需要數 GB 記憶體。
 
 ### 執行
 
@@ -108,35 +116,44 @@ OrigCore 0.1.0 **刻意**沒做以下事情。這些不是「還沒做完」，�
 
 ## 快速開始
 
+先進入你要建置的版本資料夾，再執行 Gradle：
+
 ```powershell
-# 1) 套用 Paper patch 堆疊（第一次必做）
+cd versions\26.2        # 或 versions\1.21.11、versions\26.1、versions\26.3
+
+# 1) 套用上游 patch 堆疊（第一次必做；會下載 Mache 與 Minecraft 伺服器 JAR）
 .\gradlew.bat applyPatches
 
 # 2) 執行 OrigCore 單元測試（不需要啟動伺服器）
 .\gradlew.bat :paper-server:origcoreTest
 
-# 3) 產出可用的伺服器 JAR（使用 Mojang mappings 變體）
-.\gradlew.bat createMojmapBundlerJar createMojmapPaperclipJar
+# 3) 產出可用的伺服器 JAR
+.\gradlew.bat createBundlerJar createPaperclipJar
 ```
 
-產出位於 `paper-server/build/libs/`：
+> **任務名稱依版本而異：**
+> - `versions/1.21.11`（Paperweight 2.0.0-beta.19）：`createMojmapBundlerJar`／
+>   `createMojmapPaperclipJar`，產物為 `origcore-bundler-<版本>-mojmap.jar`。
+> - `versions/26.x`（Paperweight 2.0.0-beta.21+）：只有 `createBundlerJar`／
+>   `createPaperclipJar`，產物為 `origcore-bundler-<版本>.jar`（本身就是 mojmap 命名空間）。
+
+產出位於該版本資料夾的 `paper-server/build/libs/`，例如：
 
 ```
-origcore-bundler-1.21.11-R0.1-SNAPSHOT-mojmap.jar
-origcore-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar
-paper-server-1.21.11-R0.1-SNAPSHOT.jar
+versions/26.2/paper-server/build/libs/origcore-bundler-26.2.local-SNAPSHOT.jar
+versions/1.21.11/paper-server/build/libs/origcore-bundler-1.21.11-R0.1-SNAPSHOT-mojmap.jar
 ```
 
-**要拿去開伺服器請用 `origcore-bundler-*-mojmap.jar`**（或 paperclip 變體）。
+**要拿去開伺服器請用 `origcore-bundler-*.jar`**（或 paperclip 變體）。
 `paper-server-*.jar` 不是可獨立啟動的伺服器。
-
-> **注意：** 請使用 `-mojmap` 變體。上游已刻意停用 `reobf` 變體的產生，`createReobf*` 會失敗，這是預期行為。
 
 ---
 
 ## 建置
 
-完整說明（含 patch 工作流程、疑難排解、CI）請見 [`docs/BUILD.md`](docs/BUILD.md)。這裡只列常用指令：
+完整說明（含 patch 工作流程、疑難排解、CI）請見 [`docs/BUILD.md`](docs/BUILD.md)。這裡只列常用指令。
+
+**以下指令都要先在該版本的資料夾內執行**（例如 `cd versions\26.2`）：
 
 | 目的 | 指令 |
 | --- | --- |
@@ -144,11 +161,11 @@ paper-server-1.21.11-R0.1-SNAPSHOT.jar
 | 重新產生上游 patch 檔案 | `gradlew rebuildPatches` |
 | 編譯 | `gradlew :paper-server:compileJava` |
 | OrigCore 單元測試 | `gradlew :paper-server:origcoreTest` |
-| 打包（bundler） | `gradlew createMojmapBundlerJar` |
-| 打包（paperclip） | `gradlew createMojmapPaperclipJar` |
-| 完整檢查 | `gradlew check`（含 Paper 上游自己的測試；OrigCore 尚未在 Windows 上驗證此任務，見 `docs/BUILD.md`） |
+| 打包（bundler） | `gradlew createBundlerJar`（1.21.11 為 `createMojmapBundlerJar`） |
+| 打包（paperclip） | `gradlew createPaperclipJar`（1.21.11 為 `createMojmapPaperclipJar`） |
+| 完整檢查 | `gradlew check`（含 Paper 上游自己的測試；OrigCore 未在 Windows 上驗證此任務，見 `docs/BUILD.md`） |
 | 開發用伺服器 | `gradlew runServer`（或 `runBundler`／`runPaperclip`） |
-| 複製 bundler JAR 到指定目錄 | `gradlew :paper-server:deployBundlerJar`（設 `mcsmanagerInstanceDir` 後，`createMojmapBundlerJar` 之後會自動執行；見 `docs/BUILD.md` 第 8 節） |
+| 複製 bundler JAR 到指定目錄 | `gradlew :paper-server:deployBundlerJar`（設 `mcsmanagerInstanceDir`／`mcsmanagerInstanceDir.<版本>` 後，打包任務結束會自動執行；見 `docs/BUILD.md`） |
 
 ---
 
@@ -291,6 +308,23 @@ java -Dorigcore.diagnostics.periodic=true -jar origcore-bundler-....jar --nogui
 ## 專案結構
 
 ```
+OrigCore/
+  README.md                          本文件（共用）
+  docs/                              架構、建置、相容性、效能量測、區域化 Tick 藍圖（共用）
+  tools/smoke-test.ps1               啟動／關閉驗證腳本（共用）
+  .github/workflows/build.yml        CI（以版本矩陣跑各版本資料夾）
+  versions/
+    README.md                        版本對照表（上游分支／commit／Java／建置狀態）
+    1.21.11/                         Minecraft 1.21.11 的完整 Paperweight 專案
+    26.1/                            Minecraft 26.1.2 的完整 Paperweight 專案
+    26.2/                            Minecraft 26.2 的完整 Paperweight 專案
+    26.3/                            Minecraft 26.3（上游 `main`）的完整 Paperweight 專案
+```
+
+每個版本資料夾都是一個完整、可獨立建置的 Paperweight 專案。下列路徑**都位於
+`versions/<版本>/` 之內**，四個版本皆相同：
+
+```
 paper-server/src/main/java/io/origcore/
   OrigCore.java                     核心常數與版本來源（讀取 JAR manifest）
   OrigCoreBootstrap.java            啟動 / Tick / 關閉掛鉤
@@ -318,10 +352,11 @@ paper-server/src/origcoreTest/java/io/origcore/
 
 paper-server/patches/sources/net/minecraft/server/MinecraftServer.java.patch
                                        OrigCore 唯一的 Minecraft 層 patch（3 個 hook）
-
-docs/                                  架構、建置、相容性、效能量測、區域化 Tick 藍圖
-tools/smoke-test.ps1                   啟動／關閉驗證腳本
 ```
+
+導入到 Minecraft 層的 hook 只有三個，全部在 `MinecraftServer.java`：伺服器啟動後
+（Tick 迴圈之前）、每個 Tick 結束、以及 `stopServer()` 之前（先於插件停用）。
+其他 OrigCore 邏輯都不碰原版程式碼。
 
 ---
 
@@ -329,25 +364,32 @@ tools/smoke-test.ps1                   啟動／關閉驗證腳本
 
 | 分支 | 用途 |
 | --- | --- |
-| `main` | 穩定分支。只包含已驗證的內容。 |
+| `main` | 穩定分支。**所有版本資料夾都在這個分支上**（不是一個版本一個分支）。 |
 | `exp/region-tick` | 區域化 Tick 實驗分支。**未經驗證不得合併回 `main`。** |
 | `release/0.1.0` | 0.1.0 的發布標籤。 |
 
-只維護 Minecraft 1.21.11。不建立多版本矩陣。
+多版本採「資料夾並存」而非「分支並存」：`versions/1.21.11`、`versions/26.1`、
+`versions/26.2`、`versions/26.3` 同時存在於 `main`，各自的驗證狀態記錄在
+[`versions/README.md`](versions/README.md)。
 
 ---
 
 ## 版本與上游對應
 
-| 屬性 | 值 |
-| --- | --- |
-| `OrigCore-Version` | `0.1.0`（來源：`gradle.properties` 的 `origCoreVersion`） |
-| JAR 檔名版本 | `1.21.11-R0.1-SNAPSHOT`（= `project.version`，Minecraft／Bukkit API 版本） |
-| `Bukkit#getBukkitVersion()` | `1.21.11-R0.1-SNAPSHOT` |
-| 上游 commit | `c5eb0790f199da6c38d0a650e1e5cd5415b28185` |
+| 資料夾 | `project.version`＝`Bukkit#getBukkitVersion()` | 上游分支 | 上游 commit |
+| --- | --- | --- | --- |
+| `versions/1.21.11` | `1.21.11-R0.1-SNAPSHOT` | `ver/1.21.11` | `c5eb0790f199da6c38d0a650e1e5cd5415b28185` |
+| `versions/26.1` | `26.1.2.local-SNAPSHOT` | `ver/26.1.2` | `e4e17fc90d31c3dca6de8bebc87c741749f8f3df` |
+| `versions/26.2` | `26.2.local-SNAPSHOT` | `ver/26.2` | `3e24be0380996655d0e4c842cd3bc0f1c08b09a3` |
+| `versions/26.3` | `26.3.local-SNAPSHOT` | `main` | `a90108f43cabdf058548f9b27b9319bf7842c49d` |
 
-> **不要**把 `gradle.properties` 的 `version` 改成 OrigCore 的版本號。它會經由 `paper-api` 的 `apiVersioning.json`
-> 變成 `Bukkit#getBukkitVersion()` 的回傳值；改掉會讓插件判斷錯版本或拒絕載入。
+- `OrigCore-Version` 一律是 `0.1.0`（來源：各版本 `gradle.properties` 的 `origCoreVersion`）。
+- 26.x 的 `project.version` 由上游 `settings.gradle.kts` 依 `mcVersion` 產生，本機
+  建置為 `<mcVersion>.local-SNAPSHOT`；1.21.11 則直接寫在 `gradle.properties`。
+
+> **不要**把 `project.version`（或 1.21.11 `gradle.properties` 的 `version`）改成
+> OrigCore 的版本號。它會經由 `paper-api` 的 `apiVersioning.json` 變成
+> `Bukkit#getBukkitVersion()` 的回傳值；改掉會讓插件判斷錯版本或拒絕載入。
 > OrigCore 自己的版本請改 `origCoreVersion`。
 
 ---

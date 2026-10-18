@@ -12,8 +12,9 @@ plugins {
 // OrigCore - 多版本資料夾結構的調整（與 Paper 上游不同之處）
 // 本專案位於 OrigCore 母 repo 的 versions/<Minecraft 版本>/ 底下，
 // git 工作區（.git）在母 repo 根目錄，而不是本目錄。
-// Paperweight 需要一個 git 工作區才能取得 upstream remote 與版本分支，
-// 因此這裡除了本目錄，也接受上層目錄有 .git 的情況。
+// Paper 原本要求每個專案目錄本身必須是一個 git clone（Paperweight 會用 git
+// 取得 commit 資訊、並以 git 存放修補後的原始碼），在資料夾式多版本結構裡
+// 母 repo 已經提供這個工作區，因此改為也接受上層目錄的 .git。
 // 若你要把這個資料夾單獨搬出去當成獨立 repo，本目錄有 .git 時原本的檢查就會通過。
 if (!file(".git").exists() && !file("../.git").exists() && !file("../../.git").exists()) {
     val errorText = """
